@@ -296,6 +296,30 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
   await a.waitForTimeout(400);
   await a.screenshot({ path: path.join(OUT, '5_menu.png') });
 
+  // ── 서버 주소 이사: 옛 주소를 저장한 휴대폰이 새 주소로 옮겨 간다 (팀 코드 맞을 때만) ──
+  {
+    const mctx = await b.newContext(phone);
+    await mctx.addInitScript(() => {
+      window.SUPPLY_MOVED = { 'http://localhost:8787/old': 'http://localhost:8787/api', 'http://localhost:8787/api2': 'http://localhost:8787/api' };
+    });
+    const mp = await mctx.newPage();
+    mp.on('pageerror', (e) => errors.push('이사: ' + e.message));
+    await mp.goto(`http://localhost:${port}/`);
+    await mp.evaluate(() => {
+      localStorage.setItem('sup.cfg', JSON.stringify({ u: 'http://localhost:8787/old', k: 'testkey123' }));
+      localStorage.setItem('sup.me', JSON.stringify('박지역장'));
+    });
+    await mp.reload();
+    await mp.waitForFunction(() => JSON.parse(localStorage.getItem('sup.cfg')).u === 'http://localhost:8787/api', null, { timeout: 10000 });
+    await mp.waitForSelector('#siteView .scard');
+    // 팀 코드가 다르면 옮기지 않는다
+    await mp.evaluate(() => localStorage.setItem('sup.cfg', JSON.stringify({ u: 'http://localhost:8787/api2', k: 'wrong' })));
+    await mp.reload();
+    await mp.waitForTimeout(1500);
+    assert.equal(await mp.evaluate(() => JSON.parse(localStorage.getItem('sup.cfg')).u), 'http://localhost:8787/api2');
+    await mctx.close();
+  }
+
   // ── 휴대폰만으로 처음 설치 (아무것도 없는 서버) ──────────────
   const inst = require('./serve').start(8788, { standalone: true });
   const ictx = await b.newContext({ ...phone, permissions: ['clipboard-read', 'clipboard-write'] });
