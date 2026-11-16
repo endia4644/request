@@ -30,6 +30,9 @@ require('fs').mkdirSync(OUT, { recursive: true });
     return p;
   }
   const a = await open('김철수');
+  // 새 서버 + 수취인 명단 없음 → 맨 위에 명단 가져오기 안내
+  await a.waitForSelector('#diagBox:not([hidden])', { timeout: 10000 });
+  assert.match(await a.textContent('#diagBox'), /근무자 명단이 아직 없어요/);
   assert.equal(new URL(a.url()).hash, '', '연결 정보는 주소창에서 지운다');
   await a.screenshot({ path: path.join(OUT, '1_empty.png') });
 
@@ -295,6 +298,28 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
   await a.click('#menuBtn');
   await a.waitForTimeout(400);
   await a.screenshot({ path: path.join(OUT, '5_menu.png') });
+
+  // 수취인이 생긴 뒤에는 안내가 사라진다
+  assert.equal(await a.isVisible('#diagBox'), false);
+
+  // ── 옛 서버 코드(thumb 모름) → 맨 위에 '옛 버전' 안내 ──
+  {
+    const oldSrv = require('./serve').start(8789);
+    const realHandle = oldSrv.env.ctx.handle_;
+    oldSrv.env.ctx.handle_ = (req) => (req.action === 'thumb' ? { ok: false, error: '알 수 없는 요청: thumb' } : realHandle(req));
+    const octx = await b.newContext(phone);
+    const op = await octx.newPage();
+    await op.goto(`http://localhost:8789/`);
+    await op.evaluate(() => {
+      localStorage.setItem('sup.cfg', JSON.stringify({ u: 'http://localhost:8789/api', k: 'testkey123' }));
+      localStorage.setItem('sup.me', JSON.stringify('김철수'));
+    });
+    await op.reload();
+    await op.waitForSelector('#diagBox:not([hidden])', { timeout: 10000 });
+    assert.match(await op.textContent('#diagBox'), /서버 코드가 아직 옛 버전/);
+    await op.screenshot({ path: path.join(OUT, '16_old_server.png') });
+    await octx.close(); oldSrv.server.close();
+  }
 
   // ── 서버 주소 이사: 옛 주소를 저장한 휴대폰이 새 주소로 옮겨 간다 (팀 코드 맞을 때만) ──
   {
