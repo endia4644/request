@@ -264,6 +264,46 @@ print(json.dumps({n: [[c.value for c in r] for r in wb[n].iter_rows()] for n in 
   await a.click('#fRcvList button:has-text("홍길동")');
   assert.equal(await a.inputValue('#fTel'), '010-5555-6666');
   await a.click('#addCancel');
+  // ── 근무자 명단(수취인 탭) → 현장 드롭다운(구분별) → 성함 드롭다운 → 번호·주소 ──
+  {
+    const cs = env.sheets['수취인'];
+    const last = cs.getLastRow();
+    cs.getRange(1, 1, 1, 5).setValues([['구분', '현장', '이름', '전화번호', '주소']]);
+    cs.getRange(last + 1, 1, 4, 5).setValues([
+      ['가나 브랜드', '가나 브랜드 강남', '최가람', '010-1000-2000', ''],
+      ['가나 브랜드', '가나 브랜드 강남', '한누리', '01030004000', '서울시 ○○구 가나로 1'],
+      ['가나 브랜드', '가나 브랜드 홍대', '정다운', '010-5000-6000', ''],
+      ['기타', '라마 성수', '윤바다', '010-7000-8000', ''],
+    ]);
+    await a.reload();
+    await a.waitForSelector('#addForm:not([hidden])');
+    await a.waitForTimeout(800);
+    await a.click('#fName'); await a.fill('#fName', '고무장갑');
+    await a.fill('#fSite', ''); await a.fill('#fRcv', ''); await a.fill('#fTel', ''); await a.fill('#fAddr', '');
+    await a.click('.ddbtn[data-dd="site"]');
+    await a.waitForSelector('#fSiteList:not([hidden])');
+    const heads = await a.$$eval('#fSiteList .sh2', (els) => els.map((e) => e.textContent));
+    console.log('현장 목록 묶음:', heads.join(' / '));
+    assert.deepEqual(heads.slice(0, 2), ['최근 쓴 현장', '가나 브랜드']);
+    assert.ok(heads.includes('기타'));
+    await a.screenshot({ path: path.join(OUT, '17_site_dd.png') });
+    await a.click('#fSiteList button:has-text("가나 브랜드 강남")');
+    // 현장을 고르면 성함 목록이 바로 열린다 (그 현장 사람만)
+    await a.waitForSelector('#fRcvList:not([hidden])');
+    const names = await a.$$eval('#fRcvList button .sn', (els) => els.map((e) => e.textContent));
+    console.log('성함 목록:', names.join(' / '));
+    assert.equal(names.length, 2); assert.ok(names[0].startsWith('최가람') || names[0].startsWith('한누리'));
+    await a.screenshot({ path: path.join(OUT, '18_name_dd.png') });
+    await a.click('#fRcvList button:has-text("한누리")');
+    assert.equal(await a.inputValue('#fTel'), '010-3000-4000');
+    assert.equal(await a.inputValue('#fAddr'), '서울시 ○○구 가나로 1');
+    // 명단에 없는 현장 → 안내
+    await a.fill('#fSite', '없는현장'); await a.fill('#fRcv', '');
+    await a.click('.ddbtn[data-dd="rcv"]');
+    assert.match(await a.textContent('#fRcvList'), /없는현장 근무자가 명단에 없어요/);
+    await a.click('#addCancel');
+  }
+
   // 현장별 보기에 수취인 줄
   await a.click('[data-view="site"]');
   await a.waitForTimeout(300);

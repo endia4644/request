@@ -143,8 +143,14 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
 .sugg { position: relative; }
 .sugglist { /* 아래 버튼을 덮지 않게 겹치지 않고 밀어낸다 */
   margin-top: 6px; background: var(--card); border: 1px solid var(--line);
-  border-radius: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.08); overflow: hidden; max-height: 300px; overflow-y: auto;
+  border-radius: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.08); overflow: hidden; max-height: 360px; overflow-y: auto;
 }
+.dd { position: relative; }
+.dd .field { padding-right: 46px; }
+.ddbtn { position: absolute; right: 3px; top: 3px; bottom: 3px; width: 42px; border-radius: 10px; color: var(--sub); display: grid; place-items: center; }
+.ddbtn:active { background: var(--line); }
+.sugglist .sh2 { padding: 8px 14px 5px; font-size: 12px; font-weight: 800; color: var(--sub); background: var(--field); border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+.sugglist .info { padding: 12px 14px; font-size: 13px; color: var(--sub); line-height: 1.5; }
 .sugglist button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 12px 14px; font-size: 16px; border-bottom: 1px solid var(--line); }
 .sugglist button:last-child { border-bottom: 0; }
 .sugglist button:active, .sugglist button.on { background: var(--field); }
@@ -411,23 +417,24 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     <div class="row">
       <label class="lbl" for="fSite">현장</label>
       <div class="sugg">
-        <input class="field" id="fSite" placeholder="예: ○○빌딩 3층" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false">
+        <div class="dd"><input class="field" id="fSite" placeholder="눌러서 현장 고르기 (직접 입력도 돼요)" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false"><button type="button" class="ddbtn" data-dd="site" aria-label="현장 목록"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button></div>
         <div class="sugglist" id="fSiteList" hidden></div>
       </div>
     </div>
 
     <div class="row" style="display:grid;grid-template-columns:1fr 1.2fr;gap:8px">
       <div>
-        <label class="lbl" for="fRcv">수취인</label>
+        <label class="lbl" for="fRcv">수취인 성함</label>
         <div class="sugg">
-          <input class="field" id="fRcv" placeholder="이름" maxlength="20" autocomplete="off" autocorrect="off" spellcheck="false">
-          <div class="sugglist" id="fRcvList" hidden style="width:calc(200% + 8px)"></div>
+          <div class="dd"><input class="field" id="fRcv" placeholder="성함 고르기" maxlength="20" autocomplete="off" autocorrect="off" spellcheck="false"><button type="button" class="ddbtn" data-dd="rcv" aria-label="성함 목록"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button></div>
+          
         </div>
       </div>
       <div>
         <label class="lbl" for="fTel">연락처</label>
         <input class="field" id="fTel" placeholder="010-0000-0000" inputmode="tel" maxlength="20" autocomplete="off">
       </div>
+      <div class="sugglist" id="fRcvList" hidden style="grid-column:1 / -1;margin-top:0"></div>
     </div>
 
     <div class="row">
@@ -784,9 +791,11 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   }
   // 입력 칸 아래 제안 목록. kind: 'name' | 'site'
   var SUGG = { name: ['fName', 'fNameList'], site: ['fSite', 'fSiteList'], rcv: ['fRcv', 'fRcvList'], addr: ['fAddr', 'fAddrList'] };
-  function showSugg(kind) {
+  var GRP_RANK = function (g) { return g === '' ? 2 : g === '기타' ? 1 : 0; }; // 이름 있는 구분 → 기타 → 구분 없음
+  // all=true: 칸에 뭐가 적혀 있든 전체 목록 (▾ 버튼)
+  function showSugg(kind, all) {
     var input = $(SUGG[kind][0]), box = $(SUGG[kind][1]);
-    var q = input.value;
+    var q = all ? '' : input.value;
     var list = kind === 'name' ? nameCandidates() : kind === 'site' ? siteCandidates() : kind === 'rcv' ? rcvCandidates() : addrCandidates();
     var scored;
     if (kind === 'addr') {
@@ -795,7 +804,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     } else if (kind === 'rcv') {
       // 지금 고른 현장 사람을 먼저
       var site = $('fSite').value.trim();
-      scored = list.filter(function (c) { return !q.trim() ? (site ? c.site === site : c.uses > 0) : matchScore(c.name, q) > 0; })
+      scored = list.filter(function (c) { return !q.trim() ? (site ? c.site === site : c.uses > 0) : matchScore(c.name, q) > 0 || matchScore(chosung(c.name), q) > 0; })
         .sort(function (a, b) { return (b.site === site) - (a.site === site) || b.last - a.last || b.uses - a.uses || a.name.localeCompare(b.name, 'ko'); });
     } else if (!q.trim()) {
       // 비어 있으면: 품명은 최근에 쓴 것, 현장은 자주 쓰는 곳 → 명단에만 있는 현장(가나다)
@@ -807,24 +816,55 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         .sort(function (a, b) { return b.s - a.s || b.c.uses - a.c.uses || b.c.last - a.c.last || a.c.name.localeCompare(b.c.name, 'ko'); })
         .map(function (x) { return x.c; });
     }
-    scored = scored.slice(0, kind === 'site' || kind === 'rcv' ? 30 : 8);
-    if (!scored.length) { box.hidden = true; return; }
-    box.innerHTML = scored.map(function (c, i) {
+    if (kind !== 'site' && kind !== 'rcv') scored = scored.slice(0, 8);
+    // 안내 줄 (고를 게 없을 때 왜 없는지)
+    var info = '';
+    if (kind === 'site' && !q.trim() && !state.contacts.length) info = '근무자 명단이 아직 없어요. 구글 시트 <b>수취인</b> 탭에 명단을 넣으면 현장이 전부 떠요. 지금은 직접 적어도 돼요.';
+    if (kind === 'rcv' && !q.trim()) {
+      var st = $('fSite').value.trim();
+      if (!state.contacts.length) info = '근무자 명단이 아직 없어요 (구글 시트 <b>수취인</b> 탭). 성함을 직접 적으면 다음부터 떠요.';
+      else if (!st) info = '현장을 먼저 고르면 그 현장 근무자가 떠요.';
+      else if (!scored.length) info = '<b>' + esc(st) + '</b> 근무자가 명단에 없어요. 직접 적으면 다음부터 떠요.';
+    }
+    if (!scored.length && !info) { box.hidden = true; return; }
+    // 현장 전체 목록은 구분(수취인 탭)별로 묶는다: 최근 쓴 현장 → 무신사 스탠다드 → … → 기타
+    var heads = {};
+    if (kind === 'site' && !q.trim()) {
+      var grpOf = {};
+      state.contacts.forEach(function (c) { if (c.site && !(c.site in grpOf)) grpOf[c.site] = c.grp || ''; });
+      var recent = scored.filter(function (c) { return c.uses > 0; }).sort(function (a, b) { return b.last - a.last; }).slice(0, 6);
+      var rest = scored.filter(function (c) { return recent.indexOf(c) < 0; })
+        .sort(function (a, b) {
+          var ga = grpOf[a.name] || '', gb = grpOf[b.name] || '';
+          return GRP_RANK(ga) - GRP_RANK(gb) || ga.localeCompare(gb, 'ko') || a.name.localeCompare(b.name, 'ko');
+        });
+      scored = recent.concat(rest);
+      if (recent.length && rest.length) heads[0] = '최근 쓴 현장';
+      rest.forEach(function (c, j) {
+        var g = grpOf[c.name] || '', pg = j ? grpOf[rest[j - 1].name] || '' : null;
+        if (j === 0 || g !== pg) heads[recent.length + j] = g || '그 밖의 현장';
+      });
+    }
+    box.innerHTML = (info ? '<div class="info">' + info + '</div>' : '') + scored.map(function (c, i) {
+      var h = heads[i] ? '<div class="sh2">' + esc(heads[i]) + '</div>' : '';
+      return h + suggRow(kind, c, i, q);
+    }).join('');
+    box._items = scored;
+    box.hidden = false;
+  }
+  function suggRow(kind, c, i, q) {
       if (kind === 'addr') {
         return '<button type="button" data-i="' + i + '"><span class="sn">' + highlight(c.name, q) + '</span>' +
           (c.uses ? '<span class="su">' + c.uses + '번</span>' : '') + '</button>';
       }
       if (kind === 'rcv') {
         return '<button type="button" data-i="' + i + '"><span class="sn">' + highlight(c.name, q) +
-          (c.site ? ' <span class="su">' + esc(c.site) + '</span>' : '') + '</span><span class="su">' + esc(c.tel || '') + '</span></button>';
+          (c.site && c.site !== $('fSite').value.trim() ? ' <span class="su">' + esc(c.site) + '</span>' : '') + '</span><span class="su">' + esc(c.tel || '') + '</span></button>';
       }
       return '<button type="button" data-i="' + i + '"><span class="sn">' + highlight(c.name, q) + '</span>' +
         (c.unit ? '<span class="su">' + esc(c.unit) + '</span>' : '') +
         (c.link ? '<span class="st">쿠팡 링크</span>' : '') +
         (kind === 'site' && c.uses ? '<span class="su">' + c.uses + '건</span>' : '') + '</button>';
-    }).join('');
-    box._items = scored;
-    box.hidden = false;
   }
   function hideSugg(kind) { $(SUGG[kind][1]).hidden = true; }
   function pickSugg(kind, c) {
@@ -1924,6 +1964,14 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   $('fSite').addEventListener('focus', function () { showSugg('site'); });
   $('fSite').addEventListener('change', autofillRcv);
   $('fRcv').addEventListener('input', function () { showSugg('rcv'); });
+  // ▾ 버튼: 칸에 적힌 것과 상관없이 전체 목록
+  document.querySelectorAll('.ddbtn').forEach(function (b) {
+    b.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+    b.addEventListener('click', function () {
+      var kind = b.getAttribute('data-dd');
+      $(SUGG[kind][0]).focus(); showSugg(kind, true); // 언제 눌러도 전체 목록 (닫기는 다른 곳 누르기)
+    });
+  });
   $('fRcv').addEventListener('focus', function () { showSugg('rcv'); });
   $('fTel').addEventListener('blur', function () { this.value = phoneFmt(this.value); });
   $('fAddr').addEventListener('input', function () { showSugg('addr'); });
