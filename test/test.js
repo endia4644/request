@@ -12,10 +12,9 @@ const K = 'k1';
 const post = (o) => JSON.parse(g.doPost({ postData: { contents: JSON.stringify(Object.assign({ k: K }, o)) } }).content);
 const list = () => JSON.parse(g.doGet({ parameter: { action: 'list', k: K } }).content);
 
-t('설정 전에는 막는다', () => {
+t('설치 전에는 막는다', () => {
   const r = list();
-  assert.equal(r.ok, false);
-  assert.match(r.error, /처음 설정/);
+  assert.equal(r.ok, false); assert.equal(r.code, 'NOINIT');
 });
 env.props.TEAM_KEY = K;
 
@@ -160,5 +159,51 @@ t('잘못된 JSON', () => {
   const r = JSON.parse(g.doPost({ postData: { contents: '{oops' } }).content);
   assert.equal(r.ok, false);
 });
+
+// ── 휴대폰 설치 (시트에 붙지 않은 스크립트) ─────────────────────
+{
+  const e2 = makeEnv({ standalone: true });
+  const g2 = e2.ctx;
+  const post2 = (o) => JSON.parse(g2.doPost({ postData: { contents: JSON.stringify(o) } }).content);
+
+  t('휴대폰 설치: init 이 스프레드시트·트리거·팀 코드를 만든다', () => {
+    const r = post2({ action: 'init' });
+    assert.equal(r.ok, true); assert.ok(r.k.length >= 8);
+    assert.equal(r.sheetUrl, 'https://docs.google.com/spreadsheets/d/SSID/edit');
+    assert.equal(e2.log.created, 1);
+    assert.deepEqual(e2.log.triggers, ['onSheetEdit']);
+    assert.ok(e2.sheets['청소용품']); assert.equal(e2.sheets['시트1'], undefined);
+    assert.equal(e2.sheets['청소용품'].peek(1, 4).v, '쿠팡');
+    assert.equal(e2.props.SHEET_ID, 'SSID');
+  });
+
+  t('휴대폰 설치: init 은 한 번만 (남이 다시 부르면 거절, 팀 코드를 알면 시트 주소)', () => {
+    const r = post2({ action: 'init' });
+    assert.equal(r.ok, false); assert.equal(r.code, 'INIT_DONE'); assert.equal(r.k, undefined);
+    const again = post2({ action: 'init', k: e2.props.TEAM_KEY });
+    assert.equal(again.ok, true); assert.equal(again.again, true);
+    assert.equal(e2.log.created, 1);
+  });
+
+  t('휴대폰 설치: 등록하면 새로 만든 시트에 들어가고 시트를 다시 만들지 않는다', () => {
+    const k = e2.props.TEAM_KEY;
+    assert.equal(post2({ action: 'add', k, name: '락스' }).ok, true);
+    assert.equal(e2.sheets['청소용품'].peek(2, 3).v, '락스');
+    assert.equal(post2({ action: 'info', k }).sheetUrl, 'https://docs.google.com/spreadsheets/d/SSID/edit');
+    assert.equal(e2.log.created, 1);
+  });
+
+  t('휴대폰 설치: 시트 수정 트리거(onSheetEdit)도 링크를 채운다', () => {
+    const sh = e2.sheets['청소용품'];
+    sh.getRange(3, 3).setValue('밀대');
+    g2.onSheetEdit({ range: sh.getRange(3, 3) });
+    assert.match(sh.peek(3, 4).f, /^=HYPERLINK\("https:\/\/www\.coupang\.com\/np\/search\?q=%EB%B0%80%EB%8C%80"/);
+  });
+
+  t('휴대폰 설치: 주소만 열면 GitHub에서 받은 화면 (캐시)', () => {
+    assert.equal(g2.doGet({ parameter: {} }).kind, 'remote');
+    assert.equal(e2.log.fetched, 1);
+  });
+}
 
 console.log(`\n${n}개 모두 통과`);

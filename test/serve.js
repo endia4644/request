@@ -6,11 +6,16 @@ const fs = require('fs');
 const path = require('path');
 const { makeEnv } = require('./fake_gas');
 
-const PORT = +process.argv[2] || 8787;
-const env = makeEnv();
-env.props.TEAM_KEY = 'testkey123';
-env.ctx.sheet_(); // 시트 만들기
 const DELAY = +process.env.DELAY || 150;
+
+// opts.standalone: 휴대폰 설치처럼 아무것도 없는 상태에서 시작 (init 으로 설치)
+function start(port, opts) {
+opts = opts || {};
+const env = makeEnv(opts);
+if (!opts.standalone) {
+  env.props.TEAM_KEY = 'testkey123';
+  env.ctx.sheet_(); // 시트 만들기
+}
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -39,5 +44,13 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': type });
   fs.createReadStream(p).pipe(res);
 });
-server.listen(PORT, () => console.log('http://localhost:' + PORT));
-module.exports = { env, server };
+server.listen(port);
+return { env, server };
+}
+
+if (require.main === module) {
+  const port = +process.argv[2] || 8787;
+  start(port, { standalone: process.env.STANDALONE === '1' });
+  console.log('http://localhost:' + port + (process.env.STANDALONE === '1' ? '  (빈 상태 — 처음 설치부터)' : '  (팀 코드 testkey123)'));
+}
+module.exports = { start };

@@ -67,21 +67,33 @@ class Range {
   getSheet() { return this.sh; }
 }
 
-function makeEnv() {
+// opts.standalone: 시트에 붙지 않은 스크립트 (휴대폰 설치) — getActiveSpreadsheet() 가 null
+function makeEnv(opts) {
+  opts = opts || {};
   const sheets = {};
   const props = {};
+  const log = { created: 0, triggers: [], fetched: 0 };
   const ss = {
     getSheetByName: (n) => sheets[n] || null,
     insertSheet: (n) => (sheets[n] = new Sheet(n)),
+    getSheets: () => Object.values(sheets),
+    getId: () => 'SSID',
+    getUrl: () => 'https://docs.google.com/spreadsheets/d/SSID/edit',
     setSpreadsheetTimeZone() {},
   };
+  const Sheet_setName = function (n) { delete sheets[this.name]; this.name = n; sheets[n] = this; };
   const ctx = {
     console, Date, JSON, Math, String, Number, Object, Array, RegExp, encodeURIComponent, decodeURIComponent, parseInt, isNaN,
     SpreadsheetApp: {
-      getActiveSpreadsheet: () => ss, flush() {}, newDataValidation: noop, newConditionalFormatRule: noop,
+      getActiveSpreadsheet: () => (opts.standalone ? null : ss), flush() {}, newDataValidation: noop, newConditionalFormatRule: noop,
+      create: () => { log.created++; const sh = new Sheet('시트1'); sh.setName = Sheet_setName; sheets['시트1'] = sh; return ss; },
+      openById: (id) => { if (id !== 'SSID') throw new Error('없는 시트'); return ss; },
       getUi: noop,
     },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
+    ScriptApp: { newTrigger: (fn) => { log.triggers.push(fn); return noop(); } },
+    CacheService: { getScriptCache: () => { const m = {}; return { get: (k) => m[k] || null, put: (k, v) => { m[k] = v; } }; } },
+    UrlFetchApp: { fetch: () => { log.fetched++; return { getContentText: () => '<html>원격 화면</html>' }; } },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: { getUuid: () => crypto.randomUUID(), base64EncodeWebSafe: (s) => Buffer.from(s).toString('base64url'), Charset: {} },
     ContentService: {
@@ -89,13 +101,17 @@ function makeEnv() {
       createTextOutput: (s) => ({ content: s, setMimeType() { return this; } }),
     },
     HtmlService: {
-      createHtmlOutputFromFile: () => ({ kind: 'html', setTitle() { return this; }, addMetaTag() { return this; }, setXFrameOptionsMode() { return this; } }),
+      createHtmlOutputFromFile: () => {
+        if (opts.standalone) throw new Error('index 파일 없음');
+        return { kind: 'html', setTitle() { return this; }, addMetaTag() { return this; } };
+      },
+      createHtmlOutput: (h) => ({ kind: 'remote', html: h, setTitle() { return this; }, addMetaTag() { return this; } }),
       XFrameOptionsMode: {},
     },
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8'), ctx, { filename: 'Code.gs' });
-  return { ctx, ss, sheets, props };
+  return { ctx, ss, sheets, props, log };
 }
 
 module.exports = { makeEnv };

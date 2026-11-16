@@ -161,6 +161,26 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
 .setup h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.02em; }
 .setup p { color: var(--sub); margin: 0 0 14px; font-size: 15px; }
 .setup ol { color: var(--sub); font-size: 14px; padding-left: 20px; margin: 0 0 18px; }
+.setup .primary { margin-top: 6px; }
+.step { padding: 18px 16px; margin-top: 12px; scroll-margin-top: 72px; }
+.step h3 { margin: 0 0 10px; font-size: 17px; display: flex; align-items: center; gap: 10px; letter-spacing: -0.01em; }
+.step h3 .no { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 14px; display: grid; place-items: center; flex: none; }
+.step.done h3 .no { background: var(--done); }
+.step ol, .step ul { margin: 0; padding-left: 20px; font-size: 14px; color: var(--sub); }
+.step li { margin: 5px 0; }
+.step li b { color: var(--ink); }
+.step .primary, .step .outline { margin-top: 12px; }
+.outline {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 52px; border-radius: 14px;
+  border: 1.5px solid var(--accent); color: var(--accent); font-size: 16px; font-weight: 700; text-decoration: none; background: var(--card);
+}
+.note { font-size: 13px; color: var(--sub); background: var(--field); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+.okmsg { font-size: 14px; color: var(--done); font-weight: 600; margin-top: 8px; min-height: 0; }
+.okmsg:empty { display: none; }
+.errmsg { font-size: 14px; color: var(--danger); margin-top: 8px; }
+.errmsg:empty { display: none; }
+textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, monospace; margin-top: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--field); padding: 8px; }
+.back { font-size: 14px; color: var(--sub); padding: 12px 2px 0; }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
@@ -190,22 +210,88 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
 <main class="wrap">
 
   <!-- 처음 연결 -->
-  <section class="card setup" id="setupView" hidden>
-    <h2>앱 연결하기</h2>
-    <p>관리자가 보내준 <b>연결 링크</b>를 휴대폰에서 누르면 바로 연결됩니다.</p>
-    <ol>
-      <li>구글 시트 메뉴 <b>청소용품 앱 → ② 휴대폰 연결 링크 만들기</b></li>
-      <li>나온 링크를 카카오톡으로 보내서 열기</li>
-    </ol>
-    <div id="setupUrlRow">
-      <label class="lbl" for="setupUrl">웹 앱 주소 (직접 넣을 때)</label>
-      <input class="field" id="setupUrl" placeholder="https://script.google.com/…/exec" autocomplete="off" inputmode="url">
+  <section id="setupView" hidden>
+    <div class="card setup" id="welcome">
+      <h2>청소용품 앱</h2>
+      <p>관리자에게 받은 <b>연결 링크</b>가 있으면 그 링크를 누르세요. 바로 연결돼요.</p>
+      <button class="primary" id="goInstall">처음 설치하기 (관리자용 · 휴대폰으로 5분)</button>
+      <button type="button" class="more" id="manualToggle" aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+        링크 대신 주소·팀 코드를 직접 넣기
+      </button>
+      <div id="manualBox" hidden>
+        <div class="row" id="setupUrlRow">
+          <label class="lbl" for="setupUrl">웹 앱 주소 (또는 받은 연결 링크)</label>
+          <input class="field" id="setupUrl" placeholder="https://script.google.com/…/exec" autocomplete="off" inputmode="url">
+        </div>
+        <div class="row">
+          <label class="lbl" for="setupKey">팀 코드</label>
+          <input class="field" id="setupKey" autocomplete="off" autocapitalize="off">
+        </div>
+        <button class="primary" id="setupBtn">연결</button>
+      </div>
     </div>
-    <div class="row">
-      <label class="lbl" for="setupKey">팀 코드</label>
-      <input class="field" id="setupKey" autocomplete="off" autocapitalize="off">
+
+    <div id="installView" hidden>
+      <button type="button" class="back" id="installBack">← 처음 화면</button>
+      <div class="card step" id="st0">
+        <p class="sub" style="margin:0;color:var(--sub);font-size:14px">
+          중간에 다른 창(Apps Script)을 다녀와야 해요. <b>이 화면은 닫지 말고</b> 크롬·사파리 탭으로 열어두세요.
+          카카오톡 안에서 열었다면 오른쪽 위 메뉴 → <b>다른 브라우저로 열기</b>.
+        </p>
+      </div>
+
+      <div class="card step" id="st1">
+        <h3><span class="no">1</span>서버 코드 복사</h3>
+        <button type="button" class="primary" id="copyCode">코드 복사하기</button>
+        <div class="okmsg" id="copyOk"></div>
+        <div id="codeFallback" hidden>
+          <p class="note">자동 복사가 안 되는 브라우저예요. 아래 칸을 길게 눌러 <b>전체 선택 → 복사</b> 해주세요.</p>
+          <textarea class="code" id="codeBox" readonly></textarea>
+        </div>
+      </div>
+
+      <div class="card step" id="st2">
+        <h3><span class="no">2</span>Apps Script에 붙여넣기</h3>
+        <a class="outline" id="openGas" href="https://script.google.com/create" target="_blank" rel="noopener">Apps Script 새 프로젝트 열기 ↗</a>
+        <ol style="margin-top:12px">
+          <li>편집기가 안 보이거나 '앱을 설치하라'고 나오면 브라우저 메뉴(<b>⋮</b> 또는 <b>가A</b>)에서 <b>데스크톱 사이트</b>를 켜세요.</li>
+          <li>편집기 글자를 길게 눌러 <b>전체 선택</b> → <b>붙여넣기</b>. 원래 있던 <code>function myFunction()</code>은 지워져야 해요.</li>
+          <li>위쪽 <b>💾 저장</b> 아이콘을 누르세요.</li>
+        </ol>
+      </div>
+
+      <div class="card step" id="st3">
+        <h3><span class="no">3</span>웹 앱으로 배포</h3>
+        <ol>
+          <li>오른쪽 위 파란 <b>배포</b> → <b>새 배포</b></li>
+          <li>'유형 선택' 옆 <b>⚙</b> → <b>웹 앱</b></li>
+          <li>다음 사용자 인증 정보로 실행: <b>나</b><br>액세스 권한이 있는 사용자: <b>모든 사용자</b></li>
+          <li><b>배포</b> → <b>액세스 승인</b> → 내 계정 → <b>고급</b> → <b>…(으)로 이동(안전하지 않음)</b> → <b>허용</b></li>
+          <li>나온 <b>웹 앱 URL</b> 아래 <b>복사</b>를 누르고 이 화면으로 돌아오기</li>
+        </ol>
+        <p class="note">'안전하지 않음'은 내가 직접 만든 코드라 구글이 따로 검사하지 않았다는 뜻이에요. 이 코드는 내 드라이브에 시트 하나를 만들고 거기에만 씁니다.</p>
+      </div>
+
+      <div class="card step" id="st4">
+        <h3><span class="no">4</span>주소 넣고 설치 마치기</h3>
+        <div class="linkrow" id="instUrlRow">
+          <input class="field" id="instUrl" placeholder="https://script.google.com/macros/s/…/exec" inputmode="url" autocomplete="off">
+          <button type="button" class="smallbtn" id="instPaste">붙여넣기</button>
+        </div>
+        <button type="button" class="primary" id="instGo">설치 마치기</button>
+        <div class="errmsg" id="instErr"></div>
+      </div>
+
+      <div class="card step done" id="st5" hidden>
+        <h3><span class="no">✓</span>설치 완료</h3>
+        <p style="margin:0;font-size:14px;color:var(--sub)">내 구글 드라이브에 <b style="color:var(--ink)">청소용품 요청</b> 시트가 만들어졌어요. 앱에서 등록하면 여기에 쌓여요.</p>
+        <button type="button" class="primary" id="instShare">지역장님께 연결 링크 보내기</button>
+        <a class="outline" id="instSheet" href="#" target="_blank" rel="noopener">구글 시트 열어보기 ↗</a>
+        <button type="button" class="outline" id="instStart" style="margin-top:10px">앱 시작하기</button>
+        <p class="note">시트도 같이 보게 하려면 구글 시트 앱에서 <b>공유</b> → 지역장님 구글 이메일 추가 (선택). 앱만 쓸 거면 안 해도 돼요.</p>
+      </div>
     </div>
-    <button class="primary" id="setupBtn">연결</button>
   </section>
 
   <!-- 등록 -->
@@ -833,6 +919,7 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
       '<h2>설정</h2>' +
       '<button class="linkbtn" id="mName">내 이름<small>' + esc(me || '(없음)') + ' — 등록자로 표시돼요</small></button>' +
       (link ? '<button class="linkbtn" id="mShare">함께 볼 사람에게 링크 보내기<small>카카오톡으로 보내면 그 휴대폰도 바로 연결돼요</small></button>' : '') +
+      '<a class="linkbtn" id="mSheet" href="#" target="_blank" rel="noopener" style="text-decoration:none">구글 시트 열기<small id="mSheetSub">주소 확인 중…</small></a>' +
       '<button class="linkbtn" id="mXlsx">엑셀로 내보내기<small>기간·상태·현장을 골라 .xlsx 파일로 받아요</small></button>' +
       '<button class="linkbtn" id="mRefresh">지금 새로고침<small>' + esc(state.err ? '오류: ' + state.err : '15초마다 자동으로 새로고침돼요') + '</small></button>' +
       '<button class="linkbtn danger" id="mReset">연결 끊기<small>이 휴대폰에서만 연결 정보를 지워요</small></button>',
@@ -844,6 +931,12 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
           else copy(link).then(function () { toast('링크를 복사했어요. 카카오톡에 붙여넣으세요'); });
         };
         root.querySelector('#mXlsx').onclick = openExport;
+        var ms = root.querySelector('#mSheet');
+        ms.onclick = function (e) { if (ms.getAttribute('href') === '#') e.preventDefault(); };
+        call({ action: 'info' }).then(function (r) {
+          if (!r.ok) throw r;
+          ms.href = r.sheetUrl; root.querySelector('#mSheetSub').textContent = '구글 시트 앱에서 열려요';
+        }).catch(function () { root.querySelector('#mSheetSub').textContent = '시트 주소를 못 받았어요'; });
         root.querySelector('#mRefresh').onclick = function () { closeSheet(); refresh(false); };
         root.querySelector('#mReset').onclick = function () {
           if (!confirm('이 휴대폰의 연결을 끊을까요?')) return;
@@ -881,10 +974,72 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
 
   // ── 화면 전환 ─────────────────────────────────────────────
   function showSetup() {
-    $('setupView').hidden = false;
+    $('setupView').hidden = false; $('welcome').hidden = false; $('installView').hidden = true;
     $('addForm').hidden = true; $('listView').hidden = true; $('menuBtn').hidden = true; $('xlsxBtn').hidden = true; $('sync').hidden = true;
     $('setupUrlRow').hidden = GAS;
     if (cfg) { $('setupUrl').value = cfg.u || ''; $('setupKey').value = ''; }
+  }
+
+  // ── 처음 설치 (휴대폰만으로) ───────────────────────────────
+  var codeText = '';
+  function loadCode() {
+    if (codeText || GAS) return;
+    fetch('Code.gs', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.text(); })
+      .then(function (t) { codeText = t; $('codeBox').value = t; })
+      .catch(function () { $('copyOk').textContent = ''; });
+  }
+  function showInstall() {
+    $('welcome').hidden = true; $('installView').hidden = false;
+    // Apps Script 주소로 열린 화면이면 1~3단계는 이미 끝난 것
+    ['st0', 'st1', 'st2', 'st3'].forEach(function (id) { $(id).hidden = GAS; });
+    $('instUrlRow').hidden = GAS;
+    if (GAS) $('st4').querySelector('.no').textContent = '✓';
+    loadCode();
+    window.scrollTo(0, 0);
+  }
+  function copyText(text) {
+    // 휴대폰 사파리는 버튼 누른 그 순간에만 복사를 허락한다 → 미리 받아둔 글을 바로 쓴다
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+    return Promise.reject();
+  }
+  function initServer(u) {
+    var body = JSON.stringify({ action: 'init', k: (cfg && cfg.k) || '' });
+    if (GAS) {
+      return new Promise(function (res, rej) {
+        google.script.run.withSuccessHandler(function (t) { res(JSON.parse(t)); }).withFailureHandler(rej).api(body);
+      });
+    }
+    return fetch(u, { method: 'POST', body: body }).then(function (r) {
+      return r.text().then(function (t) {
+        try { return JSON.parse(t); } catch (e) { throw { error: 'NOTJSON' }; }
+      });
+    });
+  }
+  function finishInstall() {
+    var u = GAS ? '' : extractUrl($('instUrl').value).replace(/[?#].*$/, '');
+    var err = $('instErr'); err.textContent = '';
+    if (!GAS) {
+      if (/\/dev$/.test(u)) { err.textContent = '…/dev 주소는 나만 열 수 있어요. 배포 화면의 웹 앱 URL(…/exec)을 넣어주세요.'; return; }
+      if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u) && !/^http:\/\/localhost:\d+\//.test(u)) {
+        err.textContent = '주소는 https://script.google.com/ 으로 시작해서 /exec 로 끝나야 해요.'; return;
+      }
+    }
+    var btn = $('instGo'); btn.disabled = true; btn.textContent = '설치하는 중… (10초쯤)';
+    initServer(u).then(function (r) {
+      if (!r.ok) throw r;
+      cfg = { u: u, k: r.k }; save('cfg', cfg);
+      ['st0', 'st1', 'st2', 'st3', 'st4'].forEach(function (id) { $(id).hidden = true; });
+      $('installBack').hidden = true;
+      $('st5').hidden = false;
+      $('instSheet').href = r.sheetUrl;
+      $('instShare').hidden = GAS;
+      window.scrollTo(0, 0);
+    }).catch(function (e) {
+      err.textContent =
+        e && e.code === 'INIT_DONE' ? '이미 설치된 주소예요. 처음 설치한 휴대폰에서 [⋮ → 함께 볼 사람에게 링크 보내기]로 링크를 받으세요.' :
+        e && e.error && e.error !== 'NOTJSON' ? e.error :
+        '연결이 안 돼요. ① 주소가 /exec 로 끝나는지 ② 배포할 때 액세스 권한을 "모든 사용자"로 했는지 ③ 액세스 승인(허용)까지 눌렀는지 확인해 주세요.';
+    }).then(function () { btn.disabled = false; btn.textContent = '설치 마치기'; });
   }
   function showApp() {
     $('setupView').hidden = true;
@@ -951,6 +1106,34 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
   $('scrim').onclick = closeSheet;
   $('menuBtn').onclick = openMenu;
   $('xlsxBtn').onclick = openExport;
+  $('goInstall').onclick = showInstall;
+  $('installBack').onclick = showSetup;
+  $('manualToggle').onclick = function () {
+    var open = $('manualBox').hidden;
+    $('manualBox').hidden = !open; this.setAttribute('aria-expanded', open);
+  };
+  $('copyCode').onclick = function () {
+    var ok = $('copyOk');
+    if (!codeText) { ok.textContent = ''; toast('코드를 아직 못 받았어요. 잠시 뒤 다시 눌러주세요'); loadCode(); return; }
+    copyText(codeText).then(function () {
+      ok.textContent = '✓ 복사됐어요 (' + codeText.split('\n').length + '줄). 이제 2번으로';
+      $('st1').classList.add('done');
+    }).catch(function () { $('codeFallback').hidden = false; });
+  };
+  $('instPaste').onclick = function () {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText().then(function (t) { $('instUrl').value = extractUrl(t) || t.trim(); })
+        .catch(function () { $('instUrl').focus(); toast('칸을 길게 눌러 붙여넣어 주세요'); });
+    } else { $('instUrl').focus(); toast('칸을 길게 눌러 붙여넣어 주세요'); }
+  };
+  $('instGo').onclick = finishInstall;
+  $('instShare').onclick = function () {
+    var link = shareLink();
+    var text = '청소용품 요청 앱 — 이 링크를 열면 바로 연결돼요';
+    if (navigator.share) navigator.share({ title: '청소용품', text: text, url: link }).catch(function () {});
+    else copy(link).then(function () { toast('링크를 복사했어요. 카카오톡에 붙여넣으세요'); });
+  };
+  $('instStart').onclick = function () { showApp(); };
   $('setupBtn').onclick = function () {
     var u = $('setupUrl').value.trim(), k = $('setupKey').value.trim();
     var fromLink = decodeCfg((u.match(/[#?&]c=([^&]+)/) || [])[1] || '');

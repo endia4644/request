@@ -8,7 +8,10 @@
  *     · 안 넣으면 '쿠팡에서 품명 검색' 링크
  *   시트에서 직접 품명을 적어도(onEdit) 똑같이 링크·ID·등록일시가 채워진다.
  *
- * 설치: README.md
+ * 설치: README.md — 휴대폰만으로 된다.
+ *   script.google.com 새 프로젝트에 이 파일만 붙여넣고 웹 앱으로 배포 → 앱의 '처음 설치' 화면에 주소를 넣으면
+ *   init 이 시트('청소용품 요청')를 만들고 팀 코드를 정해서 돌려준다. 시트 메뉴는 필요 없다.
+ *   (시트에 붙여서 쓰는 옛 방식 — 확장 프로그램 → Apps Script — 도 그대로 된다)
  * 검증: node test/test.js   (아래 함수들을 가짜 시트로 돌린다)
  */
 
@@ -16,6 +19,9 @@ const CFG = {
   SHEET: '청소용품',
   // 앱 주소 (GitHub Pages). 비워두면 '연결 링크'를 웹 앱 주소로만 만든다.
   PAGE_URL: 'https://endia4644.github.io/request/',
+  // Apps Script 주소로 열었을 때 보여줄 화면 (index.html 파일을 따로 안 넣어도 되게 여기서 받아 온다)
+  RAW_INDEX: 'https://raw.githubusercontent.com/endia4644/request/main/index.html',
+  SS_NAME: '청소용품 요청',
   TZ: 'Asia/Seoul',
   KEEP_DONE_DAYS: 90,   // 입고완료는 이 일수 지난 것은 앱 목록에서 뺀다 (시트에는 남음)
 };
@@ -40,7 +46,7 @@ function doGet(e) {
   const p = (e && e.parameter) || {};
   if (!p.action) {
     // 주소만 열면 앱 화면 자체를 보여준다 (GitHub Pages 없이도 쓸 수 있게)
-    return HtmlService.createHtmlOutputFromFile('index')
+    return appHtml_()
       .setTitle('청소용품')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
   }
@@ -64,17 +70,31 @@ function api(reqText) {
   return JSON.stringify(handle_(req));
 }
 
+/** 프로젝트에 index 파일이 있으면 그걸, 없으면 GitHub에서 받아 온 화면 (1시간 캐시) */
+function appHtml_() {
+  try { return HtmlService.createHtmlOutputFromFile('index'); } catch (err) { /* 파일 없음 */ }
+  const cache = CacheService.getScriptCache();
+  let html = cache.get('index');
+  if (!html) {
+    html = UrlFetchApp.fetch(CFG.RAW_INDEX).getContentText();
+    try { cache.put('index', html, 3600); } catch (err) { /* 100KB 넘으면 캐시 없이 */ }
+  }
+  return HtmlService.createHtmlOutput(html);
+}
+
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
 function handle_(req) {
   try {
+    if (req.action === 'init') return withLock_(() => init_(req));
     const key = PropertiesService.getScriptProperties().getProperty('TEAM_KEY');
-    if (!key) return { ok: false, error: '시트에서 [청소용품 앱 → 처음 설정]을 먼저 해주세요' };
+    if (!key) return { ok: false, error: '아직 설치가 안 끝났어요. 앱의 [처음 설치] 화면에서 이 주소를 넣어주세요', code: 'NOINIT' };
     if (String(req.k || '') !== key) return { ok: false, error: '팀 코드가 맞지 않습니다', code: 'KEY' };
 
     switch (req.action) {
+      case 'info': return { ok: true, sheetUrl: ss_().getUrl() };
       case 'list': return listItems_(String(req.all || '') === '1');
       case 'add': return withLock_(() => addItem_(req));
       case 'update': return withLock_(() => updateItem_(req));
@@ -102,8 +122,47 @@ function withLock_(fn) {
 // 읽기 / 쓰기
 // ═════════════════════════════════════════════════════════════
 
+/**
+ * 처음 설치: 시트를 만들고 팀 코드를 정해 돌려준다. 한 번만 된다.
+ * (배포 직후 주소를 아는 사람은 설치한 본인뿐이다. 이미 설치됐으면 팀 코드를 아는 경우에만 시트 주소를 알려준다)
+ */
+function init_(req) {
+  const props = PropertiesService.getScriptProperties();
+  const key = props.getProperty('TEAM_KEY');
+  if (key) {
+    if (String(req.k || '') === key) return { ok: true, k: key, sheetUrl: ss_().getUrl(), again: true };
+    return { ok: false, error: '이미 설치된 주소예요. 관리자에게 연결 링크를 받아주세요', code: 'INIT_DONE' };
+  }
+  sheet_();
+  const k = makeKey_();
+  props.setProperty('TEAM_KEY', k);
+  return { ok: true, k, sheetUrl: ss_().getUrl() };
+}
+
+/**
+ * 데이터 시트가 있는 스프레드시트.
+ *  · 시트에 붙은 스크립트면 그 시트
+ *  · 따로 만든 스크립트(휴대폰 설치)면 처음 한 번 '청소용품 요청' 스프레드시트를 내 드라이브에 만든다
+ */
+function ss_() {
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('SHEET_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  const ss = SpreadsheetApp.create(CFG.SS_NAME);
+  ss.setSpreadsheetTimeZone(CFG.TZ);
+  const first = ss.getSheets()[0];
+  first.setName(CFG.SHEET);
+  formatSheet_(first);
+  props.setProperty('SHEET_ID', ss.getId());
+  // 따로 만든 스크립트에는 onEdit 가 저절로 안 붙는다 → 설치형 트리거로 단다
+  ScriptApp.newTrigger('onSheetEdit').forSpreadsheet(ss).onEdit().create();
+  return ss;
+}
+
 function sheet_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = ss_();
   let sh = ss.getSheetByName(CFG.SHEET);
   if (!sh) {
     sh = ss.insertSheet(CFG.SHEET);
@@ -221,6 +280,9 @@ function newId_() {
 // ═════════════════════════════════════════════════════════════
 // 시트에서 직접 고칠 때
 // ═════════════════════════════════════════════════════════════
+
+/** 휴대폰으로 설치한 경우(따로 만든 스크립트)의 시트 수정 트리거 */
+function onSheetEdit(e) { onEdit(e); }
 
 function onEdit(e) {
   if (!e || !e.range) return;

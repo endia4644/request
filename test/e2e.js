@@ -7,8 +7,8 @@ const OUT = process.argv[2] || path.join(__dirname, 'shots');
 require('fs').mkdirSync(OUT, { recursive: true });
 
 (async () => {
-  const { server, env } = require('./serve');
-  const port = server.address().port;
+  const { server, env } = require('./serve').start(8787);
+  const port = 8787;
   const c = Buffer.from(JSON.stringify({ u: `http://localhost:${port}/api`, k: 'testkey123' })).toString('base64url');
   const link = `http://localhost:${port}/#c=${c}`;
   // 이 컨테이너는 로캘이 없어서 한글 파일 이름이 'download'로 바뀐다 → UTF-8 지정
@@ -131,6 +131,55 @@ print(ws.freeze_panes, ws.auto_filter.ref, ws['A2'].number_format)
   await a.click('#menuBtn');
   await a.waitForTimeout(400);
   await a.screenshot({ path: path.join(OUT, '5_menu.png') });
+
+  // ── 휴대폰만으로 처음 설치 (아무것도 없는 서버) ──────────────
+  const inst = require('./serve').start(8788, { standalone: true });
+  const ictx = await b.newContext({ ...phone, permissions: ['clipboard-read', 'clipboard-write'] });
+  const ip = await ictx.newPage();
+  ip.on('pageerror', (e) => errors.push('설치: ' + e.message));
+  await ip.goto('http://localhost:8788/');
+  await ip.screenshot({ path: path.join(OUT, '7_welcome.png') });
+  await ip.click('#goInstall');
+  await ip.waitForTimeout(500);
+  await ip.click('#copyCode');
+  await ip.waitForSelector('#copyOk:not(:empty)');
+  const copied = await ip.evaluate(() => navigator.clipboard.readText());
+  assert.ok(copied.includes('function doPost(e)') && copied.includes('function init_('), 'Code.gs 전체가 복사돼야 한다');
+  await ip.screenshot({ path: path.join(OUT, '8_install.png'), fullPage: true });
+  // 잘못된 주소
+  await ip.fill('#instUrl', 'https://script.google.com/macros/s/abc/dev');
+  await ip.click('#instGo');
+  assert.match(await ip.textContent('#instErr'), /dev 주소/);
+  // 붙여넣기 버튼 → 설치
+  await ip.evaluate(() => navigator.clipboard.writeText('웹 앱 URL http://localhost:8788/api'));
+  await ip.fill('#instUrl', '');
+  await ip.click('#instPaste');
+  await ip.waitForFunction(() => document.querySelector('#instUrl').value !== '');
+  assert.equal(await ip.inputValue('#instUrl'), 'http://localhost:8788/api');
+  await ip.click('#instGo');
+  await ip.waitForSelector('#st5:not([hidden])');
+  assert.equal(await ip.getAttribute('#instSheet', 'href'), 'https://docs.google.com/spreadsheets/d/SSID/edit');
+  await ip.screenshot({ path: path.join(OUT, '9_installed.png') });
+  assert.ok(inst.env.props.TEAM_KEY);
+  // 같은 주소로 남이 다시 설치하면 거절
+  const other = await (await b.newContext(phone)).newPage();
+  await other.goto('http://localhost:8788/');
+  await other.click('#goInstall');
+  await other.fill('#instUrl', 'http://localhost:8788/api');
+  await other.click('#instGo');
+  await other.waitForSelector('#instErr:not(:empty)');
+  assert.match(await other.textContent('#instErr'), /이미 설치된 주소/);
+  // 앱 시작 → 등록 → 새 시트에 들어감
+  await ip.click('#instStart');
+  await ip.fill('#nmIn', '김철수'); await ip.click('#nmOk'); await ip.waitForTimeout(300);
+  await ip.fill('#fName', '쓰레기봉투');
+  await ip.click('#addBtn');
+  await ip.waitForSelector('.item:not(.pending)');
+  assert.equal(inst.env.sheets['청소용품'].peek(2, 3).v, '쓰레기봉투');
+  // 메뉴의 '구글 시트 열기'
+  await ip.click('#menuBtn');
+  await ip.waitForFunction(() => document.querySelector('#mSheet').getAttribute('href') !== '#');
+  inst.server.close();
 
   assert.deepEqual(errors, []);
   console.log('e2e 통과');
