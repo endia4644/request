@@ -53,6 +53,34 @@ require('fs').mkdirSync(OUT, { recursive: true });
   assert.equal(sheet[2][3], '=HYPERLINK("https://link.coupang.com/a/bXyZ12","쿠팡 상품")');
   assert.equal(await a.locator('.item').first().locator('.cbtn').getAttribute('href'), 'https://link.coupang.com/a/bXyZ12');
 
+  // 현장별 최근 발주 카드
+  assert.match(await a.textContent('#recentBox'), /현장별 최근 발주[\s\S]*○○빌딩 3층[\s\S]*물티슈 1통[\s\S]*락스 4L 2통/);
+
+  // 품목 자동완성: 초성 → 윈덱스, 고르면 단위까지 / 링크 있는 품목은 링크도
+  await a.click('#fName');
+  await a.fill('#fName', 'ㅇㄷㅅ');
+  await a.waitForSelector('#fNameList:not([hidden])');
+  assert.match(await a.textContent('#fNameList'), /윈덱스/);
+  await a.screenshot({ path: path.join(OUT, '13_suggest.png') });
+  await a.click('#fNameList button:has-text("윈덱스")');
+  assert.equal(await a.inputValue('#fName'), '윈덱스');
+  assert.equal(await a.isVisible('#fNameList'), false);
+  await a.fill('#fName', '');
+  await a.type('#fName', '양동');
+  await a.click('#fNameList button:has-text("양동이")');
+  assert.match(await a.inputValue('#fLink'), /^https:\/\/www\.coupang\.com\/vp\/products\/6675264657/);
+  await a.fill('#fName', '');
+  await a.type('#fName', '청소포');
+  await a.click('#fNameList button:has-text("정전기 청소포")');
+  assert.equal(await a.getAttribute('[data-unit="박스"]', 'aria-pressed'), 'true');
+  // 현장 자동완성: 기록에서
+  await a.click('#fSite'); await a.fill('#fSite', '');
+  await a.type('#fSite', '빌딩');
+  await a.click('#fSiteList button:has-text("○○빌딩 3층")');
+  assert.equal(await a.inputValue('#fSite'), '○○빌딩 3층');
+  await a.click('#addCancel');
+  await a.click('[data-unit="통"]').catch(() => {});
+
   // 공유 문구를 통째로 붙여넣으면 품명·링크가 채워진다 (📋 붙여넣기 버튼)
   await a.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await a.evaluate(() => navigator.clipboard.writeText('[쿠팡] 유한락스 레귤러 4L https://link.coupang.com/a/LAKS01'));
@@ -187,6 +215,12 @@ print(json.dumps({n: [[c.value for c in r] for r in wb[n].iter_rows()] for n in 
   await a.waitForTimeout(400);
   assert.equal(await a.isVisible('#items'), true);
   assert.equal(await a.getAttribute('[data-view="list"]', 'aria-pressed'), 'true');
+
+  // 최근 발주 카드의 현장을 누르면 그 현장만
+  await a.click('#recentBox [data-site="○○빌딩 3층"]');
+  await a.waitForTimeout(300);
+  assert.equal(await a.locator('.item').count() >= 2, true);
+  assert.equal(await a.getAttribute('[data-tab=""]', 'aria-selected'), 'true');
 
   // 설정 메뉴
   await a.click('#menuBtn');

@@ -140,6 +140,33 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
 .newdot { position: absolute; top: 12px; left: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--new); }
 .newtag { font-size: 11px; font-weight: 800; color: var(--new); margin-left: 6px; vertical-align: 2px; }
 .empty { text-align: center; color: var(--sub); padding: 40px 0; font-size: 15px; }
+.sugg { position: relative; }
+.sugglist { /* 아래 버튼을 덮지 않게 겹치지 않고 밀어낸다 */
+  margin-top: 6px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.08); overflow: hidden; max-height: 300px; overflow-y: auto;
+}
+.sugglist button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 12px 14px; font-size: 16px; border-bottom: 1px solid var(--line); }
+.sugglist button:last-child { border-bottom: 0; }
+.sugglist button:active, .sugglist button.on { background: var(--field); }
+.sugglist .sn { flex: 1; overflow-wrap: anywhere; }
+.sugglist mark { background: none; color: var(--accent); font-weight: 800; }
+.sugglist .st { font-size: 11px; font-weight: 700; color: var(--coupang); border: 1px solid color-mix(in srgb, var(--coupang) 35%, transparent); border-radius: 6px; padding: 1px 5px; white-space: nowrap; }
+.sugglist .su { font-size: 12px; color: var(--sub); white-space: nowrap; }
+.recent { padding: 14px 14px 6px; margin-top: 18px; }
+.recent h3 { margin: 0 0 4px; font-size: 16px; display: flex; justify-content: space-between; align-items: baseline; letter-spacing: -0.01em; }
+.recent h3 small { font-size: 12px; color: var(--sub); font-weight: 600; }
+.rsite { display: block; width: 100%; text-align: left; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.rsite:last-of-type { border-bottom: 0; }
+.rsite .rt { display: flex; align-items: baseline; gap: 8px; }
+.rsite .rt b { flex: 1; font-size: 15px; overflow-wrap: anywhere; }
+.rsite .rt span { font-size: 12px; color: var(--sub); white-space: nowrap; }
+.rsite .ri { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.rsite .ri i { font-style: normal; font-size: 13px; background: var(--field); border-radius: 8px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 5px; }
+.rsite .ri i::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--req); }
+.rsite .ri i.주문완료::before { background: var(--ord); }
+.rsite .ri i.입고완료::before { background: var(--done); }
+.rsite .ri em { font-style: normal; font-size: 12px; color: var(--sub); align-self: center; }
+.rmore { width: 100%; height: 40px; font-size: 14px; font-weight: 600; color: var(--accent); }
 .viewsw { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--line); border-radius: 12px; padding: 4px; margin: 22px 0 0; }
 .viewsw button { height: 38px; border-radius: 9px; font-size: 14px; font-weight: 700; color: var(--sub); }
 .viewsw button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
@@ -336,7 +363,10 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   <!-- 등록 -->
   <form class="card add" id="addForm" hidden autocomplete="off">
     <label class="lbl" for="fName">필요한 물건</label>
-    <input class="field name-field" id="fName" list="dlNames" placeholder="예: 락스 4L, 물티슈" enterkeyhint="done" maxlength="80">
+    <div class="sugg">
+      <input class="field name-field" id="fName" placeholder="예: 윈덱스 · 초성 ㅇㄷㅅ 도 돼요" enterkeyhint="done" maxlength="80" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div class="sugglist" id="fNameList" hidden></div>
+    </div>
     <div class="cpreview" id="cpreview"></div>
 
     <div id="addExtra" hidden>
@@ -354,7 +384,10 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
 
     <div class="row">
       <label class="lbl" for="fSite">현장</label>
-      <input class="field" id="fSite" list="dlSites" placeholder="예: ○○빌딩 3층" maxlength="40">
+      <div class="sugg">
+        <input class="field" id="fSite" placeholder="예: ○○빌딩 3층" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false">
+        <div class="sugglist" id="fSiteList" hidden></div>
+      </div>
     </div>
 
     <div class="row">
@@ -385,6 +418,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   </form>
 
   <section id="listView" hidden>
+    <div class="card recent" id="recentBox" hidden></div>
     <div class="viewsw" id="viewSw">
       <button type="button" data-view="list">날짜별 목록</button>
       <button type="button" data-view="month">월별 합계</button>
@@ -523,6 +557,129 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
   }
 
+  // ── 품목 목록 (평소 발주 엑셀에서 품목·링크·단위만 뽑음: tools/catalog_from_xlsx.py) ──
+  // n=품명, l=쿠팡 링크, u=자주 쓰는 단위. 현장명·수취인은 공개 저장소라 넣지 않는다.
+  var CATALOG = /*CATALOG*/[{"n":"3M 이지트랩","u":"박스"},{"n":"3M두들더스터","u":"박스"},{"n":"3M장갑","u":"개"},{"n":"가루세제","u":"개"},{"n":"고무장갑","u":"개"},{"n":"극세사 마포걸레 리필","u":"개"},{"n":"기름걸레 60cm 마대 세트(화이트)","u":"개"},{"n":"니트릴장갑(L /블랙) 100매","u":"개"},{"n":"니트릴장갑(M/블랙) 100매","u":"개"},{"n":"두루마리 휴지(24롤)","u":"개"},{"n":"마스크(일반)","u":"박스"},{"n":"마포걸레 리필","u":"개"},{"n":"만능크리너","l":"https://www.coupang.com/vp/products/321947420?itemId=1030750923&vendorItemId=85934261950","u":"개"},{"n":"매직블럭(낱개)","u":"개"},{"n":"물걸레 청소포 마대 세트","l":"https://www.coupang.com/vp/products/5171607790?itemId=7136239580&vendorItemId=74428002110","u":"개"},{"n":"바이오 크린콜 450ml","u":"개"},{"n":"벨크로맙 리필","u":"개"},{"n":"벨크로맙 밀대 세트","u":"개"},{"n":"볼크린(6개입)","u":"박스"},{"n":"세탁세제","u":"개"},{"n":"수전 연결 호스","l":"https://link.coupang.com/a/inwps28a96/?style=kakao_existing_ui","u":"개"},{"n":"스퀴지 밀대","l":"https://www.coupang.com/vp/products/9740188680?itemId=29152667933&vendorItemId=96076245718","u":"개"},{"n":"스티커제거제","u":"개"},{"n":"쓰레기 봉투(대/백색)[300장]","u":"개"},{"n":"아스토니쉬 먼지털이","u":"개"},{"n":"아스토니쉬 바닥 클리너","l":"https://www.coupang.com/vp/products/9752152960?itemId=29201367005&vendorItemId=95143090337","u":"개"},{"n":"양동이","l":"https://www.coupang.com/vp/products/6675264657?itemId=15373362980&vendorItemId=82593470781","u":"개"},{"n":"왁스맙 (60cm) 리필","u":"개"},{"n":"우의","l":"https://www.coupang.com/vp/products/8878497388?itemId=25910569390&vendorItemId=92896269095","u":"개"},{"n":"윈덱스","u":"개"},{"n":"유한락스 레귤러 2L","u":"개"},{"n":"이지타올","u":"개"},{"n":"정전기 청소포 320X210","u":"박스"},{"n":"집게","u":"개"},{"n":"짤순이","u":"개"},{"n":"청소기 먼지봉투(500 / 10p 한팩)","l":"https://www.cleon.co.kr/goods/goods_view.php?goodsNo=1000001512","u":"개"},{"n":"코멧 위생백","l":"https://www.coupang.com/vp/products/170016350?itemId=25438942599&vendorItemId=92431848214","u":"개"},{"n":"테이프 클리너 리필세트","l":"https://www.coupang.com/vp/products/5158825957?itemId=7098819208&vendorItemId=74390761859","u":"개"},{"n":"트리오 2kg","u":"개"},{"n":"플러스맙(밀대세트)","u":"개"},{"n":"해라","u":"개"},{"n":"해라(플라스틱) 세트","l":"https://www.coupang.com/vp/products/7961172323?itemId=22010755907&vendorItemId=92147887040","u":"개"},{"n":"홈스타","u":"개"}]/*END*/;
+
+  // 초성: '윈덱스' → 'ㅇㄷㅅ'
+  var CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+  function chosung(str) {
+    var out = '';
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i) - 0xac00;
+      out += c >= 0 && c < 11172 ? CHO[Math.floor(c / 588)] : str[i];
+    }
+    return out;
+  }
+  function norm(s) { return String(s || '').replace(/\s+/g, '').toLowerCase(); }
+
+  // 품명 후보: 시트 기록(최근·자주 쓴 것) + 품목 목록. 기록의 상품 링크·단위가 목록보다 우선.
+  function nameCandidates() {
+    var map = {};
+    CATALOG.forEach(function (c) { map[norm(c.n)] = { name: c.n, link: c.l || '', unit: c.u || '', uses: 0, last: 0 }; });
+    state.items.forEach(function (it) {
+      var k = norm(it.name); if (!k) return;
+      var c = map[k] || (map[k] = { name: it.name, link: '', unit: '', uses: 0, last: 0 });
+      c.uses++;
+      if ((it.t || 0) > c.last) {
+        c.last = it.t || 0;
+        if (it.custom) c.link = it.link;
+        var q = parseQty(it.qty); if (q.u && UNITS.indexOf(q.u) >= 0) c.unit = q.u;
+      }
+    });
+    return Object.keys(map).map(function (k) { return map[k]; });
+  }
+  function siteCandidates() {
+    var map = {};
+    state.items.forEach(function (it) {
+      if (!it.site) return;
+      var c = map[it.site] || (map[it.site] = { name: it.site, uses: 0, last: 0 });
+      c.uses++; c.last = Math.max(c.last, it.t || 0);
+    });
+    return Object.keys(map).map(function (k) { return map[k]; });
+  }
+  function matchScore(name, q) {
+    var n = norm(name), nq = norm(q);
+    if (!nq) return 0;
+    if (n.indexOf(nq) === 0) return 3;
+    if (n.indexOf(nq) > 0) return 2;
+    if (/^[ㄱ-ㅎ]+$/.test(nq) && norm(chosung(name)).indexOf(nq) >= 0) return 1;
+    return 0;
+  }
+  function highlight(name, q) {
+    var i = name.toLowerCase().indexOf(String(q).trim().toLowerCase());
+    if (!q.trim() || i < 0) return esc(name);
+    return esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + q.trim().length)) + '</mark>' + esc(name.slice(i + q.trim().length));
+  }
+  // 입력 칸 아래 제안 목록. kind: 'name' | 'site'
+  function showSugg(kind) {
+    var input = $(kind === 'name' ? 'fName' : 'fSite'), box = $(kind === 'name' ? 'fNameList' : 'fSiteList');
+    var q = input.value;
+    var list = (kind === 'name' ? nameCandidates() : siteCandidates());
+    var scored;
+    if (!q.trim()) {
+      // 비어 있으면: 품명은 최근에 쓴 것, 현장은 자주 쓰는 곳
+      scored = list.filter(function (c) { return c.uses > 0; })
+        .sort(function (a, b) { return kind === 'site' ? b.uses - a.uses : b.last - a.last; });
+    } else {
+      scored = list.map(function (c) { return { c: c, s: matchScore(c.name, q) }; })
+        .filter(function (x) { return x.s > 0 && norm(x.c.name) !== norm(q); })
+        .sort(function (a, b) { return b.s - a.s || b.c.uses - a.c.uses || b.c.last - a.c.last || a.c.name.localeCompare(b.c.name, 'ko'); })
+        .map(function (x) { return x.c; });
+    }
+    scored = scored.slice(0, 8);
+    if (!scored.length) { box.hidden = true; return; }
+    box.innerHTML = scored.map(function (c, i) {
+      return '<button type="button" data-i="' + i + '"><span class="sn">' + highlight(c.name, q) + '</span>' +
+        (c.unit ? '<span class="su">' + esc(c.unit) + '</span>' : '') +
+        (c.link ? '<span class="st">쿠팡 링크</span>' : '') +
+        (kind === 'site' && c.uses ? '<span class="su">' + c.uses + '건</span>' : '') + '</button>';
+    }).join('');
+    box._items = scored;
+    box.hidden = false;
+  }
+  function hideSugg(kind) { $(kind === 'name' ? 'fNameList' : 'fSiteList').hidden = true; }
+  function pickSugg(kind, c) {
+    if (kind === 'name') {
+      $('fName').value = c.name;
+      if (c.link && !extractUrl($('fLink').value)) $('fLink').value = c.link;
+      if (c.unit && UNITS.indexOf(c.unit) >= 0) { state.unit = c.unit; renderUnits(); }
+      updatePreview();
+    } else {
+      $('fSite').value = c.name;
+    }
+    hideSugg(kind);
+  }
+
+  // ── 현장별 최근 발주 (첫 화면 맨 위) ─────────────────────────
+  var recentOpen = false;
+  function renderRecent() {
+    var box = $('recentBox');
+    var since = Date.now() - 30 * 864e5;
+    var groups = {};
+    state.items.forEach(function (it) {
+      if ((it.t || 0) < since) return;
+      var k = it.site || '';
+      var g = groups[k] || (groups[k] = { site: k, last: 0, items: [] });
+      g.items.push(it); g.last = Math.max(g.last, it.t || 0);
+    });
+    var list = Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (a, b) { return b.last - a.last; });
+    if (!state.loaded || !list.length) { box.hidden = true; return; }
+    var shown = recentOpen ? list : list.slice(0, 4);
+    box.innerHTML = '<h3>현장별 최근 발주 <small>최근 30일 · ' + list.length + '곳</small></h3>' +
+      shown.map(function (g) {
+        var its = g.items.slice().sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
+        var d = new Date(g.last);
+        return '<button type="button" class="rsite" data-site="' + esc(g.site) + '">' +
+          '<div class="rt"><b>' + esc(g.site || '현장 미지정') + '</b><span>' + (d.getMonth() + 1) + '/' + d.getDate() + ' · ' + its.length + '건</span></div>' +
+          '<div class="ri">' + its.slice(0, 4).map(function (it) {
+            return '<i class="' + esc(it.status) + '">' + esc(it.name) + (it.qty ? ' ' + esc(it.qty) : '') + '</i>';
+          }).join('') + (its.length > 4 ? '<em>외 ' + (its.length - 4) + '개</em>' : '') + '</div></button>';
+      }).join('') +
+      (list.length > 4 ? '<button type="button" class="rmore" id="recentMore">' + (recentOpen ? '접기' : '현장 ' + list.length + '곳 모두 보기') + '</button>' : '');
+    box.hidden = false;
+  }
+
   // ── 날짜·수량 도우미 ───────────────────────────────────────
   var WD = '일월화수목금토';
   function pad2(n) { return ('0' + n).slice(-2); }
@@ -569,6 +726,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   function recentDone(it) { return !(it.status === '입고완료' && it.t && Date.now() - it.t > 90 * 864e5); }
 
   function render() {
+    renderRecent();
     $('viewSw').querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-view') === state.view); });
     $('monthView').hidden = state.view !== 'month';
     $('listBox').hidden = state.view === 'month';
@@ -832,12 +990,13 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var link = extractUrl($('fLink').value);
     $('cpreview').innerHTML = link
       ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">넣은 쿠팡 상품 링크 확인 ↗</a>'
-      : n ? '<button type="button" id="cpOpen">쿠팡에서 \'' + esc(n) + '\' 찾아보기 ↗</button>' : '';
+      : n && !/^[ㄱ-ㅎ\s]+$/.test(n) ? '<button type="button" id="cpOpen">쿠팡에서 \'' + esc(n) + '\' 찾아보기 ↗</button>' : '';
   }
 
   // 평소엔 품명 칸만 보이고, 누르면 나머지가 펼쳐진다 (목록이 첫 화면에 보이게)
   function expandForm(on) {
     $('addExtra').hidden = !on;
+    if (!on) { hideSugg('name'); hideSugg('site'); }
     if (!on) { $('fName').value = ''; $('fLink').value = ''; $('fMemo').value = ''; $('fQty').value = '1'; updatePreview(); $('fName').blur(); }
   }
 
@@ -1360,8 +1519,31 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
 
   // ── 이벤트 ───────────────────────────────────────────────
   $('addForm').addEventListener('submit', submit);
-  $('fName').addEventListener('input', function () { updatePreview(); expandForm(true); });
-  $('fName').addEventListener('focus', function () { expandForm(true); });
+  $('fName').addEventListener('input', function () { updatePreview(); expandForm(true); showSugg('name'); });
+  $('fName').addEventListener('focus', function () { expandForm(true); showSugg('name'); });
+  $('fSite').addEventListener('input', function () { showSugg('site'); });
+  $('fSite').addEventListener('focus', function () { showSugg('site'); });
+  ['name', 'site'].forEach(function (kind) {
+    var input = $(kind === 'name' ? 'fName' : 'fSite'), box = $(kind === 'name' ? 'fNameList' : 'fSiteList');
+    // 목록을 누르는 순간 입력 칸이 blur 되며 목록이 사라지지 않게 pointerdown 에서 막는다
+    box.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-i]'); if (!b || !box._items) return;
+      pickSugg(kind, box._items[+b.getAttribute('data-i')]);
+    });
+    input.addEventListener('blur', function () { setTimeout(function () { hideSugg(kind); }, 150); });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideSugg(kind); });
+  });
+  $('recentBox').addEventListener('click', function (e) {
+    if (e.target.closest('#recentMore')) { recentOpen = !recentOpen; renderRecent(); return; }
+    var b = e.target.closest('[data-site]'); if (!b) return;
+    // 그 현장만 걸러서 날짜별 목록으로
+    state.site = b.getAttribute('data-site'); save('siteFilter', state.site);
+    state.tab = ''; save('tab', '');
+    state.view = 'list'; save('view', 'list');
+    render();
+    $('viewSw').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
   $('addCancel').onclick = function () { expandForm(false); };
   $('fLink').addEventListener('input', updatePreview);
   $('qMinus').onclick = function () { $('fQty').value = Math.max(1, (parseInt($('fQty').value, 10) || 1) - 1); };
