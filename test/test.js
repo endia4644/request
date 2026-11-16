@@ -316,6 +316,14 @@ t('잘못된 JSON', () => {
     assert.equal(post5({ action: 'thumb', id: r2.id }).code, 'NOLINK');
   });
 
+  t('현장 이름 규칙 (부서 + 팀)', () => {
+    assert.equal(g5.siteOf('가나 브랜드', '강남'), '가나 브랜드 강남');
+    assert.equal(g5.siteOf('가나 브랜드', '가나 브랜드'), '가나 브랜드');
+    assert.equal(g5.siteOf('다라 성수', '성수'), '다라 성수');
+    assert.equal(g5.siteOf('가나 브랜드', '평일'), '가나 브랜드');
+    assert.equal(g5.siteOf('-', '-'), '본사·관리');
+  });
+
   t('og:image 뽑기', () => {
     assert.equal(g5.ogImage('<meta content="https://x.coupangcdn.com/1.png" property="og:image"/>'), 'https://x.coupangcdn.com/1.png');
     assert.equal(g5.ogImage('<img src="//thumbnail7.coupangcdn.com/thumbnails/remote/492x492ex/image/abc.jpg">'), 'https://thumbnail7.coupangcdn.com/thumbnails/remote/492x492ex/image/abc.jpg');
@@ -375,6 +383,27 @@ t('잘못된 JSON', () => {
     const c = list7().contacts;
     assert.deepEqual(c[0], { grp: '내 묶음', site: '가나 브랜드 강남', name: '가나다', tel: '010-0000-0000', addr: '서울시 ○○로 3' });
     assert.equal(c.length, 3);
+  });
+}
+
+// ── 사용자 시트 모양 그대로: 제목 줄 + 오션 원본 + 옆에 빈 구분|현장|이름|전화번호|주소 ──
+{
+  const e8 = makeEnv(); e8.props.TEAM_KEY = 'k8';
+  t('제목 줄이 있고 같은 이름 열이 두 번 나와도 값 있는 열을 읽는다', () => {
+    const sh = e8.ss.insertSheet('수취인');
+    sh.getRange(1, 1, 1, 1).setValues([['회원 목록']]);
+    sh.getRange(2, 1, 1, 15).setValues([['성명', '부서', '팀', '직급', '전화번호', 'ID', '이메일', '사원번호', '권한', '유형', '구분', '현장', '이름', '전화번호', '주소']]);
+    sh.getRange(3, 1, 3, 15).setValues([
+      ['가나다', '가나 브랜드', '강남', '-', '010-1234-0001', 'a', '', '', '사용자', '승인', '', '', '', '', ''],
+      ['라마바', '가나 브랜드', '가나 브랜드', '-', '010-1234-0002', 'b', '', '', '사용자', '승인', '', '', '', '', ''],
+      ['사아자', '-', '-', '평일', '010-1234-0003', 'c', '', '', '사용자', '승인', '', '', '', '', ''],
+    ]);
+    const c = JSON.parse(e8.ctx.doGet({ parameter: { action: 'list', k: 'k8', contacts: '1' } }).content).contacts;
+    assert.deepEqual(c.map((x) => [x.site, x.name, x.tel]), [
+      ['가나 브랜드 강남', '가나다', '010-1234-0001'],
+      ['가나 브랜드', '라마바', '010-1234-0002'],
+      ['본사·관리', '사아자', '010-1234-0003'],
+    ]);
   });
 }
 

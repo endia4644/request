@@ -1888,7 +1888,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var get = function (r, k) { return col[k] >= 0 && col[k] != null ? String(r[col[k]] || '').trim() : ''; };
     return rows.slice(hi + 1).map(function (r) {
       var site = get(r, 'site'), dept = get(r, 'dept'), team = get(r, 'team');
-      if (!site) site = !dept || dept === '-' ? '본사·관리' : dept + (NONLOC[team] ? '' : ' ' + team);
+      if (!site) site = !dept || dept === '-' ? '본사·관리' :
+        NONLOC[team] || team === dept || dept.slice(-team.length - 1) === ' ' + team ? dept : dept + ' ' + team; // 서버 siteOf 와 같은 규칙
       return { grp: get(r, 'grp'), dept: dept && dept !== '-' ? dept : '', site: site, name: get(r, 'name'), tel: phoneFmt(get(r, 'tel')), addr: get(r, 'addr') };
     }).filter(function (c) { return c.name; });
   }

@@ -236,13 +236,38 @@ function contactCols_(sh) {
 // 팀 칸이 근무 형태면 현장 이름에 붙이지 않는다 (오션: 부서 + 팀 = 현장)
 const NONLOC_TEAM = ['-', '', '시설팀', '평일', '주말', '상주'];
 
-/** 머리 줄에서 근무자 명단 열 위치를 찾는다. 이름(성명) + 현장(부서)이 없으면 null */
-function contactHeader_(row) {
+/** 오션 부서·팀 → 현장 이름. 팀이 근무 형태(평일·주말·…)거나 부서와 같으면 부서만 */
+function siteOf(dept, team) {
+  dept = String(dept || '').trim(); team = String(team || '').trim();
+  if (!dept || dept === '-') return '본사·관리';
+  if (NONLOC_TEAM.indexOf(team) >= 0 || team === dept || dept.slice(-team.length - 1) === ' ' + team) return dept;
+  return dept + ' ' + team;
+}
+
+/**
+ * 머리 줄에서 근무자 명단 열 위치를 찾는다. 이름(성명) + 현장(부서)이 없으면 null.
+ * 같은 뜻의 열이 여러 개면(예: 오션 원본 '성명'·'전화번호' 옆에 빈 '이름'·'전화번호' 열이 또 붙은 경우)
+ * 아래 줄들(data)에 값이 가장 많이 든 열을 고른다. (2026-11-16 사용자 시트가 실제로 이랬다)
+ */
+function contactHeader_(row, data) {
   const h = row.map((v) => String(v == null ? '' : v).replace(/\s/g, ''));
-  const at = (...names) => { for (const n of names) { const i = h.indexOf(n); if (i >= 0) return i; } return -1; };
+  const filled = (i) => {
+    let n = 0;
+    for (let r = 0; r < data.length; r++) if (String(data[r][i] == null ? '' : data[r][i]).trim() !== '') n++;
+    return n;
+  };
+  const pick = (...names) => {
+    let best = -1, bestN = -1;
+    h.forEach((x, i) => {
+      if (names.indexOf(x) < 0) return;
+      const n = filled(i);
+      if (n > bestN) { best = i; bestN = n; }
+    });
+    return best;
+  };
   const m = {
-    name: at('이름', '성명', '성함'), site: at('현장', '현장명'), dept: at('부서'), team: at('팀'),
-    grp: at('구분'), tel: at('전화번호', '연락처', '휴대폰', '휴대전화', '핸드폰'), addr: at('주소'),
+    name: pick('이름', '성명', '성함'), site: pick('현장', '현장명'), dept: pick('부서'), team: pick('팀'),
+    grp: pick('구분'), tel: pick('전화번호', '연락처', '휴대폰', '휴대전화', '핸드폰'), addr: pick('주소'),
   };
   if (m.name < 0 || (m.site < 0 && m.dept < 0)) return null;
   return m;
@@ -264,7 +289,7 @@ function readContacts_() {
     if (lastRow < 2 || lastCol < 2) return;
     const vals = sh.getRange(1, 1, Math.min(lastRow, 5000), Math.min(lastCol, 40)).getValues();
     let hi = -1, m = null;
-    for (let i = 0; i < Math.min(5, vals.length); i++) { m = contactHeader_(vals[i]); if (m) { hi = i; break; } }
+    for (let i = 0; i < Math.min(5, vals.length); i++) { m = contactHeader_(vals[i], vals.slice(i + 1, i + 301)); if (m) { hi = i; break; } }
     if (!m) return;
     const get = (r, k) => (m[k] >= 0 ? String(r[m[k]] == null ? '' : r[m[k]]).trim() : '');
     for (let i = hi + 1; i < vals.length; i++) {
@@ -273,7 +298,7 @@ function readContacts_() {
       if (!name) continue;
       const dept = get(r, 'dept'), team = get(r, 'team');
       let site = get(r, 'site');
-      if (!site) site = !dept || dept === '-' ? '본사·관리' : dept + (NONLOC_TEAM.indexOf(team) >= 0 ? '' : ' ' + team);
+      if (!site) site = siteOf(dept, team);
       const key = site + '|' + name;
       if (seen[key]) continue;
       seen[key] = 1;
@@ -804,5 +829,5 @@ function normalizePhone(s) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { coupangSearchUrl, isSearchUrl, extractUrl, linkFormula, urlFromFormula, normalizeStatus, safeText, cleanInput, rowToItem, normalizePhone, ogImage, colLetter };
+  module.exports = { coupangSearchUrl, isSearchUrl, extractUrl, linkFormula, urlFromFormula, normalizeStatus, safeText, cleanInput, rowToItem, normalizePhone, ogImage, colLetter, siteOf };
 }

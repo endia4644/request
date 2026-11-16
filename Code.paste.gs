@@ -279,23 +279,41 @@ return col;
 
 const NONLOC_TEAM = [ '-', '', '시설팀', '평일', '주말', '상주' ];
 
-function contactHeader_(row) {
-const h = row.map((v => String(v == null ? '' : v).replace(/\s/g, '')));
-const at = (...names) => {
-for (const n of names) {
-const i = h.indexOf(n);
-if (i >= 0) return i;
+function siteOf(dept, team) {
+dept = String(dept || '').trim();
+team = String(team || '').trim();
+if (!dept || dept === '-') return '본사·관리';
+if (NONLOC_TEAM.indexOf(team) >= 0 || team === dept || dept.slice(-team.length - 1) === ' ' + team) return dept;
+return dept + ' ' + team;
 }
-return -1;
+
+function contactHeader_(row, data) {
+const h = row.map((v => String(v == null ? '' : v).replace(/\s/g, '')));
+const filled = i => {
+let n = 0;
+for (let r = 0; r < data.length; r++) if (String(data[r][i] == null ? '' : data[r][i]).trim() !== '') n++;
+return n;
+};
+const pick = (...names) => {
+let best = -1, bestN = -1;
+h.forEach(((x, i) => {
+if (names.indexOf(x) < 0) return;
+const n = filled(i);
+if (n > bestN) {
+best = i;
+bestN = n;
+}
+}));
+return best;
 };
 const m = {
-name: at('이름', '성명', '성함'),
-site: at('현장', '현장명'),
-dept: at('부서'),
-team: at('팀'),
-grp: at('구분'),
-tel: at('전화번호', '연락처', '휴대폰', '휴대전화', '핸드폰'),
-addr: at('주소')
+name: pick('이름', '성명', '성함'),
+site: pick('현장', '현장명'),
+dept: pick('부서'),
+team: pick('팀'),
+grp: pick('구분'),
+tel: pick('전화번호', '연락처', '휴대폰', '휴대전화', '핸드폰'),
+addr: pick('주소')
 };
 if (m.name < 0 || m.site < 0 && m.dept < 0) return null;
 return m;
@@ -313,7 +331,7 @@ if (lastRow < 2 || lastCol < 2) return;
 const vals = sh.getRange(1, 1, Math.min(lastRow, 5e3), Math.min(lastCol, 40)).getValues();
 let hi = -1, m = null;
 for (let i = 0; i < Math.min(5, vals.length); i++) {
-m = contactHeader_(vals[i]);
+m = contactHeader_(vals[i], vals.slice(i + 1, i + 301));
 if (m) {
 hi = i;
 break;
@@ -327,7 +345,7 @@ const name = get(r, 'name');
 if (!name) continue;
 const dept = get(r, 'dept'), team = get(r, 'team');
 let site = get(r, 'site');
-if (!site) site = !dept || dept === '-' ? '본사·관리' : dept + (NONLOC_TEAM.indexOf(team) >= 0 ? '' : ' ' + team);
+if (!site) site = siteOf(dept, team);
 const key = site + '|' + name;
 if (seen[key]) continue;
 seen[key] = 1;
@@ -951,6 +969,7 @@ cleanInput: cleanInput,
 rowToItem: rowToItem,
 normalizePhone: normalizePhone,
 ogImage: ogImage,
-colLetter: colLetter
+colLetter: colLetter,
+siteOf: siteOf
 };
 }
