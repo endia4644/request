@@ -286,6 +286,14 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
   // 설정 메뉴
   await a.click('#menuBtn');
   await a.waitForTimeout(400);
+  assert.match(await a.textContent('#sheetBody'), /서버 코드\s*✅ 최신/);
+  // 서버 주소 바꾸기: 같은 서버(팀 코드 맞음) 주소면 바뀐다
+  await a.click('#mServer');
+  await a.fill('#svUrl', 'http://localhost:8787/api?x=1');
+  await a.click('#svGo');
+  await a.waitForFunction(() => !document.querySelector('#sheet').classList.contains('on'));
+  await a.click('#menuBtn');
+  await a.waitForTimeout(400);
   await a.screenshot({ path: path.join(OUT, '5_menu.png') });
 
   // ── 휴대폰만으로 처음 설치 (아무것도 없는 서버) ──────────────

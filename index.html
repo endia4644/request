@@ -562,6 +562,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     return call({ action: 'list', all: needAll ? 1 : 0, contacts: needContacts ? 1 : 0 }).then(function (r) {
       if (!r.ok) throw r;
       if (r.contacts) { state.contacts = r.contacts; state.contactsAt = Date.now(); }
+      state.server = serverVersion(r);
       state.err = '';
       state.lastOk = Date.now();
       if (state.writes === 0 && gen === state.gen) apply(r.items || []);
@@ -598,6 +599,21 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     });
     if (!todo.length) return;
     fetchThumb(todo[0].id, false).then(function (ok) { if (ok) setTimeout(pumpThumbs, 300); });
+  }
+
+  // 서버 코드가 최신인지 응답 모양으로 판단 (팀 코드 없이 확인할 방법이 없어서)
+  //   최신(13열): 기록에 addr·img, 수취인에 grp·addr / 어제(11열): rcv 는 있고 addr 없음 / 그 전(9열): rcv 없음
+  function serverVersion(r) {
+    var it = (r.items || [])[0], c = (r.contacts || [])[0];
+    if (it) return 'addr' in it && 'img' in it ? 'new' : 'rcv' in it ? 'mid' : 'old';
+    if (c) return 'addr' in c ? 'new' : 'mid';
+    return state.server || '';
+  }
+  function serverLabel() {
+    return state.server === 'new' ? '✅ 최신 (주소·쿠팡 사진·명단 지원)' :
+      state.server === 'mid' ? '⚠️ 어제 버전 — 주소·사진이 안 돼요. 배포 관리에서 이 주소의 버전을 "새 버전"으로' :
+      state.server === 'old' ? '⚠️ 처음 버전 — 수취인·주소·사진이 안 돼요. 배포 관리에서 이 주소의 버전을 "새 버전"으로' :
+      '기록이 하나도 없어서 아직 판단 못 함 (하나 등록해 보세요)';
   }
 
   function apply(items) {
@@ -1660,6 +1676,9 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       '<a class="linkbtn" id="mSheet" href="#" target="_blank" rel="noopener" style="text-decoration:none">구글 시트 열기<small id="mSheetSub">주소 확인 중…</small></a>' +
       '<button class="linkbtn" id="mXlsx">엑셀로 내보내기<small>기간·상태·현장을 골라 .xlsx 파일로 받아요</small></button>' +
       '<button class="linkbtn" id="mRefresh">지금 새로고침<small>' + esc(state.err ? '오류: ' + state.err : '15초마다 자동으로 새로고침돼요') + '</small></button>' +
+      '<div class="linkbtn" style="cursor:default">서버 코드<small>' + esc(serverLabel()) + '</small>' +
+      (GAS ? '' : '<small style="word-break:break-all">' + esc(cfg.u || '') + '</small>') + '</div>' +
+      (GAS ? '' : '<button class="linkbtn" id="mServer">서버 주소 바꾸기<small>Apps Script에서 "새 배포"를 해서 주소가 바뀌었을 때 (팀 코드는 그대로)</small></button>') +
       '<button class="linkbtn danger" id="mReset">연결 끊기<small>이 휴대폰에서만 연결 정보를 지워요</small></button>',
       function (root) {
         root.querySelector('#mName').onclick = function () { closeSheet(); askName(true); };
@@ -1676,9 +1695,50 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           ms.href = r.sheetUrl; root.querySelector('#mSheetSub').textContent = '구글 시트 앱에서 열려요';
         }).catch(function () { root.querySelector('#mSheetSub').textContent = '시트 주소를 못 받았어요'; });
         root.querySelector('#mRefresh').onclick = function () { closeSheet(); refresh(false); };
+        var ms2 = root.querySelector('#mServer');
+        if (ms2) ms2.onclick = function () { closeSheet(); changeServer(); };
         root.querySelector('#mReset').onclick = function () {
           if (!confirm('이 휴대폰의 연결을 끊을까요?')) return;
           save('cfg', null); cfg = null; closeSheet(); showSetup();
+        };
+      });
+  }
+
+  // 새 배포로 주소가 바뀌었을 때: 팀 코드는 그대로 두고 주소만 바꾼다 (새 주소에서 목록을 불러 확인)
+  function changeServer() {
+    openSheet(
+      '<h2>서버 주소 바꾸기</h2><p class="sub">Apps Script 배포 관리의 웹 앱 주소(…/exec)를 붙여넣으세요. 바꾼 뒤에는 지역장님께도 <b>새 연결 링크</b>를 보내야 해요.</p>' +
+      '<div class="linkrow"><input class="field" id="svUrl" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec"><button type="button" class="smallbtn" id="svPaste">붙여넣기</button></div>' +
+      '<div class="errmsg" id="svErr"></div>' +
+      '<div class="btnrow"><button type="button" class="ghost" id="svCancel">닫기</button><button type="button" class="primary" id="svGo">확인하고 바꾸기</button></div>',
+      function (root) {
+        var inp = root.querySelector('#svUrl'), err = root.querySelector('#svErr'), go = root.querySelector('#svGo');
+        root.querySelector('#svCancel').onclick = closeSheet;
+        root.querySelector('#svPaste').onclick = function () {
+          if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(function (t) { inp.value = extractUrl(t) || t.trim(); }).catch(function () { inp.focus(); });
+          else inp.focus();
+        };
+        go.onclick = function () {
+          var u = extractUrl(inp.value).replace(/[?#].*$/, '');
+          err.textContent = '';
+          if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u) && !/^http:\/\/localhost:\d+\//.test(u)) { err.textContent = '주소는 https://script.google.com/ 으로 시작해서 /exec 로 끝나야 해요.'; return; }
+          go.disabled = true; go.textContent = '확인하는 중…';
+          fetch(u + '?action=list&contacts=1&k=' + encodeURIComponent(cfg.k) + '&_=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { return r.text(); })
+            .then(function (t) {
+              var r; try { r = JSON.parse(t); } catch (e) { throw { error: '응답이 이상해요. 배포할 때 액세스 권한을 "모든 사용자"로 했는지 확인해 주세요.' }; }
+              if (!r.ok) throw r;
+              cfg = { u: u, k: cfg.k }; save('cfg', cfg);
+              state.server = serverVersion(r); state.contactsAt = 0;
+              closeSheet(); apply(r.items || []);
+              toast('서버 주소를 바꿨어요 · ' + (state.server === 'new' ? '최신 코드' : '⚠️ 아직 옛 코드'));
+            })
+            .catch(function (e) {
+              err.textContent = e && e.code === 'KEY' ? '이 주소는 다른 서버예요 (팀 코드가 달라요). 같은 Apps Script 프로젝트의 배포 주소인지 확인해 주세요.' :
+                e && e.code === 'NOINIT' ? '이 주소는 아직 설치 전인 다른 프로젝트예요. 원래 쓰던 프로젝트에서 배포한 주소를 넣어주세요.' :
+                (e && e.error) || '연결이 안 돼요. 주소와 액세스 권한("모든 사용자")을 확인해 주세요.';
+              go.disabled = false; go.textContent = '확인하고 바꾸기';
+            });
         };
       });
   }
