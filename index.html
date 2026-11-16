@@ -69,7 +69,17 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
 .row { margin-top: 14px; }
 .cpreview { margin: 8px 2px 0; font-size: 13px; }
 .cpreview:empty { display: none; }
-.cpreview a { color: var(--coupang); text-decoration: none; font-weight: 600; }
+.cpreview a, .cpreview button { color: var(--coupang); text-decoration: none; font-weight: 600; font-size: 13px; }
+.linkbtn2 { height: 40px; padding: 0 12px; border-radius: 10px; font-size: 14px; font-weight: 600; color: var(--sub); border: 1px solid var(--line); }
+.pastebar {
+  position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 30; max-width: 536px; margin: 0 auto;
+  background: var(--ink); color: var(--card); border-radius: 16px; padding: 12px 12px 12px 16px; display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+}
+.pastebar p { margin: 0; flex: 1; font-size: 14px; line-height: 1.35; }
+.pastebar p b { color: #fde68a; }
+.pastebar .go { height: 42px; padding: 0 14px; border-radius: 11px; background: var(--coupang); color: #fff; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.pastebar .x { width: 32px; height: 32px; color: var(--faint); font-size: 20px; }
 
 .qty { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .stepper { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 12px; background: var(--field); height: 50px; }
@@ -318,19 +328,20 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       <input class="field" id="fSite" list="dlSites" placeholder="예: ○○빌딩 3층" maxlength="40">
     </div>
 
+    <div class="row">
+      <label class="lbl" for="fLink">쿠팡 상품 링크 (선택)</label>
+      <div class="linkrow">
+        <input class="field" id="fLink" placeholder="쿠팡 앱 → 공유 → 링크 복사" inputmode="url">
+        <button type="button" class="smallbtn" id="pasteBtn">📋 붙여넣기</button>
+      </div>
+      <p class="hint">쿠팡에서 고른 상품의 <b>공유 → 링크 복사</b> 후 붙여넣기. 비워두면 품명으로 검색 링크가 붙어요.</p>
+    </div>
+
     <button type="button" class="more" id="moreBtn" aria-expanded="false" aria-controls="moreBox">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
-      쿠팡 상품 링크 · 메모 (선택)
+      메모 (선택)
     </button>
     <div id="moreBox" hidden>
-      <div class="row">
-        <label class="lbl" for="fLink">쿠팡 상품 링크</label>
-        <div class="linkrow">
-          <input class="field" id="fLink" placeholder="쿠팡 앱 → 공유 → 링크 복사" inputmode="url">
-          <button type="button" class="smallbtn" id="pasteBtn">붙여넣기</button>
-        </div>
-        <p class="hint">비워두면 품명으로 쿠팡 검색 링크가 자동으로 붙어요.</p>
-      </div>
       <div class="row">
         <label class="lbl" for="fMemo">메모</label>
         <textarea class="field" id="fMemo" placeholder="예: 다음 주 월요일까지, 향 없는 걸로" maxlength="300"></textarea>
@@ -360,6 +371,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="grab"></div><div id="sheetBody"></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="pastebar" id="pasteBar" hidden><p id="pasteMsg"></p><button type="button" class="go" id="pasteGo">📋 링크 붙이기</button><button type="button" class="x" id="pasteX" aria-label="닫기">×</button></div>
 
 <script>
 (function () {
@@ -517,6 +529,84 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     $('dlSites').innerHTML = siteList.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('');
   }
 
+  var ARROW = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M7 17L17 7M9 7h8v8"/></svg>';
+
+  // ── 쿠팡 열기 · 링크 붙이기 ─────────────────────────────────
+  // www.coupang.com/np/search 는 휴대폰 사파리에서 '사용권한이 없습니다'로 막힌다 (2026-11-16 사용자 화면).
+  // 휴대폰: 쿠팡 앱(coupang://)을 먼저 열고, 앱이 없으면 1.5초 뒤 모바일 웹으로.
+  // 앱이 검색어를 못 받아도 되게 품명을 클립보드에 복사해 둔다 → 검색창에 붙여넣기.
+  var MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+  function mobileSearch(name) { return 'https://m.coupang.com/nm/search?q=' + encodeURIComponent(String(name || '').trim()); }
+  function appSearch(name) { return 'coupang://search?q=' + encodeURIComponent(String(name || '').trim()); }
+  var pending = null; // {kind:'form'} | {kind:'item', id, name} — 쿠팡 다녀오면 '링크 붙이기' 안내
+  function openCoupang(name, target) {
+    pending = target ? { kind: target.kind, id: target.id, name: name, at: Date.now() } : null;
+    if (!MOBILE) { window.open(coupangSearch(name), '_blank', 'noopener'); return; }
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(name).catch(function () {}); } catch (e) {}
+    toast('쿠팡 여는 중 · 품명을 복사해 뒀어요');
+    var left = false;
+    var onHide = function () { if (document.hidden) left = true; };
+    document.addEventListener('visibilitychange', onHide);
+    setTimeout(function () {
+      document.removeEventListener('visibilitychange', onHide);
+      if (!left && !document.hidden) location.href = mobileSearch(name); // 앱이 안 열렸다 → 모바일 웹
+    }, 1600);
+    if (GAS) window.open(appSearch(name), '_top'); else location.href = appSearch(name);
+  }
+  function showPasteBar() {
+    if (!pending || Date.now() - pending.at > 20 * 60000) { pending = null; return; }
+    $('pasteMsg').innerHTML = pending.kind === 'item'
+      ? '쿠팡에서 고른 상품을 <b>' + esc(pending.name) + '</b>에 붙일까요?<br><small>상품 화면 → 공유 → 링크 복사 후 누르세요</small>'
+      : '쿠팡에서 고른 상품 링크를 붙일까요?<br><small>상품 화면 → 공유 → 링크 복사 후 누르세요</small>';
+    $('pasteBar').hidden = false;
+  }
+  function hidePasteBar() { $('pasteBar').hidden = true; }
+
+  // 쿠팡 공유 문구에서 상품 이름 추정 (품명 칸이 비었을 때만 씀). 확실치 않으면 빈 값.
+  function nameFromShare(t) {
+    var s = String(t || '').replace(/https?:\/\/\S+/g, ' ')
+      .replace(/\[\s*쿠팡\s*\]|쿠팡에서|쿠팡\s*:|^\s*쿠팡/g, ' ')
+      .replace(/(상품을?|을|를)?\s*(확인해\s*보세요|확인하세요|구경해\s*보세요|추천해요|공유해요)[!.~]*/g, ' ')
+      .replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+      .replace(/^["'“”‘’\[(]+|["'“”‘’\])!.,:]+$/g, '').trim();
+    return s.length >= 2 && s.length <= 80 ? s : '';
+  }
+
+  // 클립보드 → 링크. 아이폰은 '붙여넣기' 확인 말풍선이 한 번 뜬다.
+  function readClipLink() {
+    if (!(navigator.clipboard && navigator.clipboard.readText)) return Promise.reject({ manual: true });
+    return navigator.clipboard.readText().then(function (t) {
+      var u = extractUrl(t);
+      if (!u) throw { msg: '복사한 내용에 링크가 없어요. 쿠팡 상품 화면에서 공유 → 링크 복사를 눌러주세요' };
+      return { url: u, text: t };
+    }, function () { throw { manual: true }; });
+  }
+  function pasteIntoForm() {
+    return readClipLink().then(function (r) {
+      expandForm(true);
+      $('fLink').value = r.url;
+      if (!$('fName').value.trim()) { var n = nameFromShare(r.text); if (n) $('fName').value = n; }
+      updatePreview();
+      toast('상품 링크를 넣었어요');
+    }).catch(function (e) {
+      if (e && e.manual) { expandForm(true); $('fLink').focus(); toast('링크 칸을 길게 눌러 붙여넣어 주세요'); }
+      else toast((e && e.msg) || '붙여넣지 못했어요');
+    });
+  }
+  function pasteIntoItem(id) {
+    var it = findItem(id);
+    if (!it) return Promise.resolve();
+    return readClipLink().then(function (r) {
+      var before = { link: it.link, custom: it.custom };
+      it.link = r.url; it.custom = true; render();
+      return write({ action: 'update', id: id, fields: { link: r.url } }, '상품 링크를 붙였어요 · 시트에도 반영')
+        .catch(function () { it.link = before.link; it.custom = before.custom; render(); });
+    }).catch(function (e) {
+      if (e && e.manual) { editItem(id); toast('쿠팡 상품 링크 칸에 길게 눌러 붙여넣어 주세요'); }
+      else if (e && e.msg) toast(e.msg);
+    });
+  }
+
   function itemHtml(it) {
     var fresh = it.by !== me && it.t && Date.now() - it.t < 30 * 60000 && it.status === '요청';
     var meta = [it.site, it.by, ago(it.t)].filter(Boolean).map(esc).join(' · ');
@@ -528,9 +618,10 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       '<div class="meta">' + (state.tab ? '' : '<span class="badge ' + esc(it.status) + '">' + esc(it.status) + '</span> ') + meta + '</div>' +
       (it.memo ? '<div class="memo">' + esc(it.memo) + '</div>' : '') +
       '<div class="acts">' +
-      '<a class="cbtn" href="' + esc(it.link || coupangSearch(it.name)) + '" target="_blank" rel="noopener">' +
-      (it.custom ? '쿠팡 상품' : '쿠팡 검색') +
-      ' <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M7 17L17 7M9 7h8v8"/></svg></a>' +
+      (it.custom
+        ? '<a class="cbtn" href="' + esc(it.link) + '" target="_blank" rel="noopener noreferrer">쿠팡 상품 ' + ARROW + '</a>'
+        : '<button type="button" class="cbtn" data-cp="1">쿠팡에서 찾기 ' + ARROW + '</button>' +
+          (it.pending ? '' : '<button type="button" class="linkbtn2" data-paste="1">링크 붙이기</button>')) +
       (it.pending ? '<span class="meta">저장 중…</span>' :
         next ? '<button class="next" data-next="' + next[0] + '">' + next[1] + '</button>' :
         '<span class="badge 입고완료" style="margin-left:auto">받음</span>') +
@@ -585,7 +676,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var link = extractUrl($('fLink').value);
     $('cpreview').innerHTML = link
       ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">넣은 쿠팡 상품 링크 확인 ↗</a>'
-      : n ? '<a href="' + esc(coupangSearch(n)) + '" target="_blank" rel="noopener">쿠팡에서 \'' + esc(n) + '\' 검색 결과 보기 ↗</a>' : '';
+      : n ? '<button type="button" id="cpOpen">쿠팡에서 \'' + esc(n) + '\' 찾아보기 ↗</button>' : '';
   }
 
   // 평소엔 품명 칸만 보이고, 누르면 나머지가 펼쳐진다 (목록이 첫 화면에 보이게)
@@ -1082,14 +1173,27 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var open = $('moreBox').hidden;
     $('moreBox').hidden = !open; this.setAttribute('aria-expanded', open);
   };
-  $('pasteBtn').onclick = function () {
-    if (navigator.clipboard && navigator.clipboard.readText) {
-      navigator.clipboard.readText().then(function (t) {
-        var u = extractUrl(t);
-        if (u) { $('fLink').value = u; updatePreview(); } else toast('복사한 내용에 링크가 없어요');
-      }).catch(function () { $('fLink').focus(); toast('칸을 길게 눌러 붙여넣어 주세요'); });
-    } else { $('fLink').focus(); toast('칸을 길게 눌러 붙여넣어 주세요'); }
+  $('pasteBtn').onclick = function () { pasteIntoForm(); };
+  $('cpreview').addEventListener('click', function (e) {
+    if (e.target.closest('#cpOpen')) openCoupang($('fName').value.trim(), { kind: 'form' });
+  });
+  $('fLink').addEventListener('paste', function () {
+    // 공유 문구를 통째로 붙여넣어도 주소만 남기고, 품명이 비었으면 이름을 채운다
+    var el = this;
+    setTimeout(function () {
+      var raw = el.value, u = extractUrl(raw);
+      if (u && u !== raw.trim()) {
+        if (!$('fName').value.trim()) { var n = nameFromShare(raw); if (n) $('fName').value = n; }
+        el.value = u; updatePreview();
+      }
+    }, 0);
+  });
+  $('pasteGo').onclick = function () {
+    var p = pending; hidePasteBar(); pending = null;
+    if (!p) return;
+    if (p.kind === 'item') pasteIntoItem(p.id); else pasteIntoForm();
   };
+  $('pasteX').onclick = function () { hidePasteBar(); pending = null; };
   $('fLink').addEventListener('blur', function () { var u = extractUrl(this.value); if (u) this.value = u; updatePreview(); });
 
   $('tabs').addEventListener('click', function (e) {
@@ -1100,6 +1204,9 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   $('items').addEventListener('click', function (e) {
     if (e.target.closest('a')) return;
     var li = e.target.closest('.item'); if (!li) return;
+    var id = li.getAttribute('data-id'), it0 = findItem(id);
+    if (e.target.closest('[data-cp]')) { if (it0) openCoupang(it0.name, { kind: 'item', id: id }); return; }
+    if (e.target.closest('[data-paste]')) { pasteIntoItem(id); return; }
     var nb = e.target.closest('[data-next]');
     if (nb) setStatus(li.getAttribute('data-id'), nb.getAttribute('data-next'));
     else editItem(li.getAttribute('data-id'));
@@ -1148,7 +1255,11 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     if (!cfg || document.hidden) return;
     if (Date.now() - state.lastOk >= POLL_MS - 500) refresh(true); else syncLabel();
   }, 5000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden && cfg) refresh(true); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) return;
+    if (cfg) refresh(true);
+    if (pending) setTimeout(showPasteBar, 300); // 쿠팡 갔다 돌아옴 → '링크 붙이기' 안내
+  });
   setInterval(function () { if (!document.hidden && state.loaded && state.writes === 0) render(); }, 60000); // "n분 전" 갱신
 
   // ── 시작 ─────────────────────────────────────────────────

@@ -22,6 +22,12 @@
   → `node tools/build_paste.js`(terser, 주석 제거·세미콜론 유지)로 만든 **주석 없는 버전**을 붙여넣게 한다.
   **들여쓰기도 없앤다** — 같은 날 다음 시도에서는 복사하며 줄 앞 들여쓰기 공백이 `\`로 바뀌어 `Invalid or unexpected token`이 났다.
   줄바꿈이 전부 사라져도, 들여쓰기가 망가져도 문법이 맞는다. **Code.gs를 고치면 반드시 다시 만들어 같이 커밋**하고 `CODE_FILE=Code.paste.gs node test/test.js`.
+- **쿠팡 열기 (2026-11-16 사용자 화면)**: `www.coupang.com/np/search` 는 휴대폰 사파리에서 "요청하신 페이지의 사용권한이 없습니다".
+  앱에서는 `openCoupang`: 휴대폰이면 `coupang://search?q=` → 1.6초 안에 화면이 안 가려지면 `m.coupang.com/nm/search?q=`.
+  ⚠️ 두 주소 다 **확인 못 한 추정**이다 (이 환경에서 쿠팡 접속 불가). 그래서 품명을 클립보드에 복사해 둔다. 사용자 결과를 듣고 고칠 것.
+  시트의 HYPERLINK는 컴퓨터용이라 www 검색 주소 그대로.
+- **링크 붙이기**: 쿠팡 다녀오면(`visibilitychange`) 아래 `pasteBar`가 뜨고, 누르면 `clipboard.readText`(아이폰은 확인 말풍선) → `update {link}`.
+  아이폰은 사용자 동작 없이 클립보드를 못 읽으므로 '자동으로 끌어오기'는 이게 한계. `nameFromShare`가 공유 문구에서 품명을 추정.
 - **열 순서**: 등록일시|현장|품명|쿠팡|수량|등록자|상태|메모|ID(숨김). 바꾸면 `HEAD`/`COL`과 README 같이.
 - 시트에 손으로 품명을 적으면 `onEdit`이 링크·ID·시각·상태를 채운다. `=`·`+`·`@`로 시작하는 입력은 `'`를 붙여 수식 차단.
 - **엑셀 내보내기**(2026-11-16 요청): 라이브러리 없이 `index.html` 안에서 `.xlsx`를 직접 만든다 (`zip` 무압축 + XML, `buildXlsx`).

@@ -53,6 +53,16 @@ require('fs').mkdirSync(OUT, { recursive: true });
   assert.equal(sheet[2][3], '=HYPERLINK("https://link.coupang.com/a/bXyZ12","쿠팡 상품")');
   assert.equal(await a.getAttribute('.item:nth-child(1) .cbtn', 'href'), 'https://link.coupang.com/a/bXyZ12');
 
+  // 공유 문구를 통째로 붙여넣으면 품명·링크가 채워진다 (📋 붙여넣기 버튼)
+  await a.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await a.evaluate(() => navigator.clipboard.writeText('[쿠팡] 유한락스 레귤러 4L https://link.coupang.com/a/LAKS01'));
+  await a.click('#fName'); await a.click('#pasteBtn');
+  await a.waitForFunction(() => document.querySelector('#fLink').value !== '');
+  assert.equal(await a.inputValue('#fLink'), 'https://link.coupang.com/a/LAKS01');
+  assert.equal(await a.inputValue('#fName'), '유한락스 레귤러 4L');
+  await a.screenshot({ path: path.join(OUT, '10_paste_form.png') });
+  await a.click('#addCancel');
+
   // 지역장 폰: 열자마자 보인다
   const m = await open('박지역장', 'dark');
   await m.waitForFunction(() => document.querySelectorAll('.item').length === 2);
@@ -66,6 +76,15 @@ require('fs').mkdirSync(OUT, { recursive: true });
   await a.waitForFunction(() => document.querySelectorAll('.item').length === 3, null, { timeout: 25000 });
   assert.match(await a.textContent('.item:nth-child(1)'), /NEW/);
   await a.screenshot({ path: path.join(OUT, '2_list.png'), fullPage: true });
+
+  // 검색 링크만 있는 항목에 '링크 붙이기' → 상품 링크로 바뀌고 시트에도
+  await a.evaluate(() => navigator.clipboard.writeText('쿠팡 https://link.coupang.com/a/BAG100'));
+  await a.click('.item:has-text("종량제") [data-paste]');
+  await a.waitForFunction(() => /BAG100/.test(document.querySelector('.item:nth-child(1) .cbtn').getAttribute('href') || ''), null, { timeout: 10000 });
+  await a.waitForTimeout(500);
+  const sh3 = await (await fetch(`http://localhost:${port}/__sheet`)).json();
+  assert.ok(sh3.some((r) => r[3] === '=HYPERLINK("https://link.coupang.com/a/BAG100","쿠팡 상품")'), '시트에 상품 링크');
+  await a.screenshot({ path: path.join(OUT, '11_item_linked.png') });
 
   // 지역장이 '주문했어요' → 김철수 폰 '주문함' 탭으로 옮겨감
   await m.click('.item:has-text("락스") .next');
