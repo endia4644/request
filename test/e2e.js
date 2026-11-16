@@ -411,6 +411,11 @@ wb.save(sys.argv[1])`, xlsx]);
     await upage.click('#impGo');
     await upage.waitForFunction(() => !document.querySelector('#sheet').classList.contains('on'), null, { timeout: 10000 });
     assert.equal(c1.peek(2, 1).v, '가나 묶음'); assert.equal(c1.peek(3, 5).v, '서울시 ○○로 5'); assert.equal(c1.getLastRow(), 3);
+    // 시트에 직접 한 명 더 적고 ⋮ → 지금 새로고침 → 바로 반영
+    c1.getRange(4, 1, 1, 5).setValues([['기타', '마바 센터', '새사람', '010-9999-0002', '']]);
+    await upage.click('#menuBtn'); await upage.waitForTimeout(300);
+    await upage.click('#mRefresh');
+    await upage.waitForFunction(() => /근무자 3명 · 현장 2곳 불러왔어요/.test(document.querySelector('#toast').textContent), null, { timeout: 10000 });
     await uctx.close(); up.server.close();
   }
 

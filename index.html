@@ -1748,7 +1748,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       '<a class="linkbtn" id="mSheet" href="#" target="_blank" rel="noopener" style="text-decoration:none">구글 시트 열기<small id="mSheetSub">주소 확인 중…</small></a>' +
       '<button class="linkbtn" id="mImport">근무자 명단 올리기<small>오션 근무자 파일을 고르면 현장·성함·번호 목록이 바뀌어요</small></button>' +
       '<button class="linkbtn" id="mXlsx">엑셀로 내보내기<small>기간·상태·현장을 골라 .xlsx 파일로 받아요</small></button>' +
-      '<button class="linkbtn" id="mRefresh">지금 새로고침<small>' + esc(state.err ? '오류: ' + state.err : '15초마다 자동으로 새로고침돼요') + '</small></button>' +
+      '<button class="linkbtn" id="mRefresh">지금 새로고침<small>' + esc(state.err ? '오류: ' + state.err : '기록은 15초마다, 근무자 명단은 5분마다 저절로 읽어요. 누르면 둘 다 지금 읽어요') + '</small></button>' +
       '<div class="linkbtn" style="cursor:default">서버 코드<small>' + esc(serverLabel()) + '</small>' +
       (GAS ? '' : '<small style="word-break:break-all">' + esc(cfg.u || '') + '</small>') + '</div>' +
       (GAS ? '' : '<button class="linkbtn" id="mServer">서버 주소 바꾸기<small>Apps Script에서 "새 배포"를 해서 주소가 바뀌었을 때 (팀 코드는 그대로)</small></button>') +
@@ -1768,7 +1768,16 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           if (!r.ok) throw r;
           ms.href = r.sheetUrl; root.querySelector('#mSheetSub').textContent = '구글 시트 앱에서 열려요';
         }).catch(function () { root.querySelector('#mSheetSub').textContent = '시트 주소를 못 받았어요'; });
-        root.querySelector('#mRefresh').onclick = function () { closeSheet(); refresh(false); };
+        root.querySelector('#mRefresh').onclick = function () {
+          closeSheet();
+          state.contactsAt = 0; // 근무자 명단(수취인 탭)도 지금 다시 읽기
+          refresh(false).then(function () {
+            if (state.err) return;
+            var sites = {};
+            state.contacts.forEach(function (c) { if (c.site) sites[c.site] = 1; });
+            toast(state.contacts.length ? '근무자 ' + state.contacts.length + '명 · 현장 ' + Object.keys(sites).length + '곳 불러왔어요' : '수취인 탭에 근무자가 없어요');
+          });
+        };
         var ms2 = root.querySelector('#mServer');
         if (ms2) ms2.onclick = function () { closeSheet(); changeServer(); };
         root.querySelector('#mReset').onclick = function () {
