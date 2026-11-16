@@ -26,14 +26,16 @@ const CFG = {
   KEEP_DONE_DAYS: 90,   // 입고완료는 이 일수 지난 것은 앱 목록에서 뺀다 (시트에는 남음)
 };
 
-// 2026-11-16 수취인·연락처 두 열을 수량 뒤에 끼웠다 (옛 9열 시트는 migrate_ 가 자동으로 바꾼다)
-const HEAD = ['등록일시', '현장', '품명', '쿠팡', '수량', '수취인', '연락처', '등록자', '상태', '메모', 'ID'];
-const COL = { TIME: 1, SITE: 2, NAME: 3, LINK: 4, QTY: 5, RCV: 6, TEL: 7, BY: 8, STATUS: 9, MEMO: 10, ID: 11 };
+// 열은 이름으로 맞춘다: 옛 시트(9열·11열)에 없는 열은 migrate_ 가 제자리에 끼운다.
+// 2026-11-16 수취인·연락처 → 같은 날 사진(쿠팡 대표 이미지)·주소 추가
+const HEAD = ['등록일시', '현장', '품명', '쿠팡', '사진', '수량', '수취인', '연락처', '주소', '등록자', '상태', '메모', 'ID'];
+const COL = { TIME: 1, SITE: 2, NAME: 3, LINK: 4, IMG: 5, QTY: 6, RCV: 7, TEL: 8, ADDR: 9, BY: 10, STATUS: 11, MEMO: 12, ID: 13 };
 // 현장별 수취인 목록 (개인정보라 이 시트에만 둔다 — 공개 저장소에는 넣지 않는다)
+// 구분 = 발주서 엑셀의 묶음 이름(예: 무신사 스탠다드). 열 순서는 머리 이름으로 찾으므로 바뀌어도 된다.
 const CONTACT_SHEET = '수취인';
-const CONTACT_HEAD = ['현장', '이름', '전화번호'];
+const CONTACT_HEAD = ['구분', '현장', '이름', '전화번호', '주소'];
 const STATUSES = ['요청', '주문완료', '입고완료'];
-const LIMIT = { name: 80, site: 40, qty: 20, by: 20, memo: 300, link: 500, rcv: 20, tel: 20 };
+const LIMIT = { name: 80, site: 40, qty: 20, by: 20, memo: 300, link: 500, rcv: 20, tel: 20, addr: 120 };
 
 const COLOR = {
   head: '#1f2937', headInk: '#ffffff', line: '#e5e7eb',
@@ -107,6 +109,7 @@ function handle_(req) {
       case 'add': return withLock_(() => addItem_(req));
       case 'update': return withLock_(() => updateItem_(req));
       case 'remove': return withLock_(() => removeItem_(req));
+      case 'thumb': return thumbItem_(req);
       default: return { ok: false, error: '알 수 없는 요청: ' + req.action };
     }
   } catch (err) {
@@ -180,13 +183,22 @@ function sheet_() {
   return sh;
 }
 
-/** 옛 9열(…수량|등록자|상태|메모|ID) 시트면 수량 뒤에 수취인·연락처 두 열을 끼운다. 한 번만 일어난다. */
+/**
+ * 옛 시트에 없는 열(사진·수취인·연락처·주소)을 HEAD 순서대로 제자리에 끼운다. 이미 맞으면 아무것도 안 한다.
+ * 머리 이름으로 비교하므로 9열·11열 어느 옛 모양이든 된다.
+ */
 function migrate_(sh) {
-  const h = sh.getRange(1, 5, 1, 2).getValues()[0];
-  if (String(h[0]) === '수량' && String(h[1]) === '등록자') {
-    sh.insertColumnsAfter(COL.QTY, 2);
-    formatSheet_(sh);
+  const width = Math.max(sh.getLastColumn(), 1);
+  const head = sh.getRange(1, 1, 1, width).getValues()[0].map((v) => String(v).trim());
+  if (!head[0]) return;
+  let changed = false;
+  for (let i = 1; i < HEAD.length; i++) {
+    if (head[i] === HEAD[i] || head.indexOf(HEAD[i]) >= 0) continue;
+    sh.insertColumnsAfter(i, 1);
+    head.splice(i, 0, HEAD[i]);
+    changed = true;
   }
+  if (changed) formatSheet_(sh);
 }
 
 // ── 수취인 목록 ────────────────────────────────────────────────
@@ -195,37 +207,67 @@ function contactSheet_() {
   let sh = ss.getSheetByName(CONTACT_SHEET);
   if (!sh) {
     sh = ss.insertSheet(CONTACT_SHEET);
-    sh.getRange(1, 1, 1, 3).setValues([CONTACT_HEAD])
+    sh.getRange(1, 1, 1, CONTACT_HEAD.length).setValues([CONTACT_HEAD])
       .setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk).setHorizontalAlignment('center');
     sh.setFrozenRows(1);
-    [160, 100, 140].forEach((w, i) => sh.setColumnWidth(i + 1, w));
-    sh.getRange('C2:C').setNumberFormat('@');
+    [130, 170, 90, 130, 320].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+    sh.getRange('D2:D').setNumberFormat('@');
   }
   return sh;
+}
+
+/** 수취인 탭의 열 위치(1부터)를 머리 이름으로 찾는다. 없는 열은 맨 뒤에 머리를 단다. */
+function contactCols_(sh) {
+  const width = Math.max(sh.getLastColumn(), 1);
+  const head = sh.getRange(1, 1, 1, width).getValues()[0].map((v) => String(v).trim());
+  const col = {};
+  CONTACT_HEAD.forEach((h) => {
+    let i = head.indexOf(h);
+    if (i < 0 && h === '전화번호') i = head.indexOf('연락처');
+    if (i < 0 && h === '이름') i = head.indexOf('성명');
+    if (i < 0) { head.push(h); i = head.length - 1; sh.getRange(1, i + 1).setValue(h); }
+    col[h] = i + 1;
+  });
+  col.width = head.length;
+  return col;
 }
 
 function readContacts_() {
   const sh = contactSheet_();
   const last = sh.getLastRow();
   if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, 3).getValues()
-    .map((v) => ({ site: String(v[0]).trim(), name: String(v[1]).trim(), tel: normalizePhone(v[2]) }))
+  const col = contactCols_(sh);
+  return sh.getRange(2, 1, last - 1, col.width).getValues()
+    .map((v) => ({
+      grp: String(v[col['구분'] - 1] || '').trim(),
+      site: String(v[col['현장'] - 1] || '').trim(),
+      name: String(v[col['이름'] - 1] || '').trim(),
+      tel: normalizePhone(v[col['전화번호'] - 1]),
+      addr: String(v[col['주소'] - 1] || '').trim(),
+    }))
     .filter((c) => c.name);
 }
 
-/** 등록할 때 쓴 수취인을 목록에 더한다 (같은 현장·이름이면 전화번호만 고침) */
-function upsertContact_(site, name, tel) {
+/** 등록할 때 쓴 수취인을 목록에 더한다 (같은 현장·이름이면 비어 있거나 바뀐 전화번호·주소만 고침) */
+function upsertContact_(site, name, tel, addr) {
   if (!name) return;
   const sh = contactSheet_();
+  const col = contactCols_(sh);
   const last = sh.getLastRow();
-  const rows = last >= 2 ? sh.getRange(2, 1, last - 1, 3).getValues() : [];
+  const rows = last >= 2 ? sh.getRange(2, 1, last - 1, col.width).getValues() : [];
   for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][0]).trim() === site && String(rows[i][1]).trim() === name) {
-      if (tel && normalizePhone(rows[i][2]) !== tel) sh.getRange(i + 2, 3).setValue(safeText(tel));
+    if (String(rows[i][col['현장'] - 1]).trim() === site && String(rows[i][col['이름'] - 1]).trim() === name) {
+      if (tel && normalizePhone(rows[i][col['전화번호'] - 1]) !== tel) sh.getRange(i + 2, col['전화번호']).setValue(safeText(tel));
+      if (addr && String(rows[i][col['주소'] - 1]).trim() !== addr) sh.getRange(i + 2, col['주소']).setValue(safeText(addr));
       return;
     }
   }
-  sh.getRange(last + 1, 1, 1, 3).setValues([[safeText(site), safeText(name), safeText(tel)]]);
+  const row = new Array(col.width).fill('');
+  row[col['현장'] - 1] = safeText(site);
+  row[col['이름'] - 1] = safeText(name);
+  row[col['전화번호'] - 1] = safeText(tel);
+  row[col['주소'] - 1] = safeText(addr);
+  sh.getRange(last + 1, 1, 1, col.width).setValues([row]);
 }
 
 /** 데이터 행 전부 → [{row, values, linkFormula}] */
@@ -236,9 +278,10 @@ function readRows_(sh) {
   const rng = sh.getRange(2, 1, n, HEAD.length);
   const values = rng.getValues();
   const links = sh.getRange(2, COL.LINK, n, 1).getFormulas();
+  const imgs = sh.getRange(2, COL.IMG, n, 1).getFormulas();
   const out = [];
   for (let i = 0; i < n; i++) {
-    out.push({ row: i + 2, values: values[i], linkFormula: links[i][0] });
+    out.push({ row: i + 2, values: values[i], linkFormula: links[i][0], imgFormula: imgs[i][0] });
   }
   return out;
 }
@@ -254,7 +297,7 @@ function listItems_(all) {
     if (String(r.values[COL.NAME - 1]).trim() === '') return;
     let id = String(r.values[COL.ID - 1] || '').trim();
     if (!id) { id = newId_(); missingId.push({ row: r.row, id }); }
-    const it = rowToItem(r.values, r.linkFormula, id);
+    const it = rowToItem(r.values, r.linkFormula, id, r.imgFormula);
     it.row = r.row;
     if (!all && it.status === '입고완료' && it.t && now - it.t > CFG.KEEP_DONE_DAYS * 864e5) return;
     items.push(it);
@@ -281,11 +324,20 @@ function addItem_(req) {
   const id = req.cid && /^[A-Za-z0-9_-]{6,40}$/.test(String(req.cid)) ? String(req.cid) : newId_();
   const row = sh.getLastRow() + 1;
   const now = new Date();
-  sh.getRange(row, 1, 1, HEAD.length).setValues([[
-    now, safeText(it.site), safeText(it.name), '', safeText(it.qty), safeText(it.rcv), safeText(it.tel),
-    safeText(it.by), '요청', safeText(it.memo), id,
-  ]]);
-  if (it.rcv) upsertContact_(it.site, it.rcv, it.tel);
+  const vals = new Array(HEAD.length).fill('');
+  vals[COL.TIME - 1] = now;
+  vals[COL.SITE - 1] = safeText(it.site);
+  vals[COL.NAME - 1] = safeText(it.name);
+  vals[COL.QTY - 1] = safeText(it.qty);
+  vals[COL.RCV - 1] = safeText(it.rcv);
+  vals[COL.TEL - 1] = safeText(it.tel);
+  vals[COL.ADDR - 1] = safeText(it.addr);
+  vals[COL.BY - 1] = safeText(it.by);
+  vals[COL.STATUS - 1] = '요청';
+  vals[COL.MEMO - 1] = safeText(it.memo);
+  vals[COL.ID - 1] = id;
+  sh.getRange(row, 1, 1, HEAD.length).setValues([vals]);
+  if (it.rcv) upsertContact_(it.site, it.rcv, it.tel, it.addr);
   sh.getRange(row, COL.LINK).setFormula(linkFormula(it.link || coupangSearchUrl(it.name), it.link ? linkLabel(it.link) : '쿠팡에서 찾기'));
   return { ok: true, id, row };
 }
@@ -307,10 +359,13 @@ function updateItem_(req) {
   if (f.site !== undefined) sh.getRange(r.row, COL.SITE).setValue(safeText(it.site));
   if (f.rcv !== undefined) sh.getRange(r.row, COL.RCV).setValue(safeText(it.rcv));
   if (f.tel !== undefined) sh.getRange(r.row, COL.TEL).setValue(safeText(it.tel));
-  if ((f.rcv !== undefined || f.tel !== undefined) && it.rcv) {
+  if (f.addr !== undefined) sh.getRange(r.row, COL.ADDR).setValue(safeText(it.addr));
+  if (f.rcv !== undefined || f.tel !== undefined || f.addr !== undefined) {
+    const rcv = f.rcv !== undefined ? it.rcv : String(r.values[COL.RCV - 1]).trim();
     const site = f.site !== undefined ? it.site : String(r.values[COL.SITE - 1]).trim();
     const tel = f.tel !== undefined ? it.tel : normalizePhone(r.values[COL.TEL - 1]);
-    upsertContact_(site, it.rcv, tel);
+    const addr = f.addr !== undefined ? it.addr : String(r.values[COL.ADDR - 1]).trim();
+    if (rcv) upsertContact_(site, rcv, tel, addr);
   }
   if (f.name !== undefined) {
     if (!it.name) return { ok: false, error: '품명을 적어주세요' };
@@ -322,8 +377,68 @@ function updateItem_(req) {
     let link = f.link !== undefined ? it.link : urlFromFormula(r.linkFormula);
     if (link && isSearchUrl(link)) link = '';
     sh.getRange(r.row, COL.LINK).setFormula(linkFormula(link || coupangSearchUrl(name), link ? linkLabel(link) : '쿠팡에서 찾기'));
+    if (f.link !== undefined) sh.getRange(r.row, COL.IMG).clearContent(); // 상품이 바뀌면 사진도 새로
   }
   return { ok: true };
+}
+
+// ── 쿠팡 사진 ─────────────────────────────────────────────────
+// 상품 링크의 대표 이미지(og:image)를 서버에서 받아 '사진' 칸에 =IMAGE() 로 넣는다.
+// 쿠팡이 자동 접속을 막으면 실패한다 → 실패 이유(응답 코드)를 그대로 돌려줘서 화면에 보여준다.
+function thumbItem_(req) {
+  const sh = sheet_();
+  const r = findRow_(sh, req.id);
+  if (!r) return { ok: false, error: '이미 지워진 항목입니다', code: 'GONE' };
+  const link = urlFromFormula(r.linkFormula) || extractUrl(String(r.values[COL.LINK - 1]));
+  if (!link || isSearchUrl(link)) return { ok: false, error: '상품 링크가 없어요', code: 'NOLINK' };
+  const got = fetchThumb_(link);
+  if (!got.img) return { ok: false, error: got.error, code: 'BLOCKED', tries: got.tries };
+  withLock_(() => {
+    const again = findRow_(sh, req.id);
+    if (again) sh.getRange(again.row, COL.IMG).setFormula(imageFormula(got.img));
+  });
+  return { ok: true, img: got.img };
+}
+
+function fetchThumb_(link) {
+  const cache = CacheService.getScriptCache();
+  const key = 'img:' + Utilities.base64EncodeWebSafe(link).slice(0, 200);
+  const hit = cache.get(key);
+  if (hit) return { img: hit };
+  const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+  const opt = (follow) => ({
+    muteHttpExceptions: true, followRedirects: follow,
+    headers: { 'User-Agent': UA, 'Accept-Language': 'ko-KR,ko;q=0.9', Accept: 'text/html,application/xhtml+xml' },
+  });
+  const tries = [];
+  let url = link;
+  // link.coupang.com 짧은 주소 → 실제 상품 주소 (Location 헤더)
+  if (/link\.coupang\.com/.test(link)) {
+    try {
+      const res = UrlFetchApp.fetch(link, opt(false));
+      const loc = res.getHeaders().Location || res.getHeaders().location;
+      tries.push('짧은주소 ' + res.getResponseCode());
+      if (loc) url = loc;
+    } catch (e) { tries.push('짧은주소 오류'); }
+  }
+  const cands = [url];
+  const m = url.match(/products\/(\d+)/);
+  if (m) {
+    const q = (url.split('?')[1] || '');
+    cands.push('https://m.coupang.com/vm/products/' + m[1] + (q ? '?' + q : ''));
+  }
+  for (let i = 0; i < cands.length; i++) {
+    try {
+      const res = UrlFetchApp.fetch(cands[i], opt(true));
+      const code = res.getResponseCode();
+      tries.push((/m\.coupang/.test(cands[i]) ? '모바일 ' : '') + code);
+      if (code === 200) {
+        const img = ogImage(res.getContentText());
+        if (img) { try { cache.put(key, img, 21600); } catch (e) { /* 무시 */ } return { img, tries }; }
+      }
+    } catch (e) { tries.push('오류'); }
+  }
+  return { error: '쿠팡에서 사진을 못 받았어요 (' + tries.join(', ') + ')', tries };
 }
 
 function removeItem_(req) {
@@ -456,26 +571,25 @@ function showLink() {
 }
 
 function formatSheet_(sh) {
+  const L = (c) => colLetter(c);
   sh.getRange(1, 1, 1, HEAD.length).setValues([HEAD])
     .setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk)
     .setHorizontalAlignment('center');
   sh.setFrozenRows(1);
-  const widths = [130, 120, 200, 110, 70, 80, 120, 80, 80, 220, 90];
-  widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
-  sh.getRange('A2:A').setNumberFormat('yyyy-mm-dd hh:mm');
-  sh.getRange('G2:G').setNumberFormat('@'); // 연락처: 맨 앞 0 이 잘리지 않게 글자로
-  sh.getRange('E2:E').setHorizontalAlignment('center');
-  sh.getRange('H2:I').setHorizontalAlignment('center');
+  const widths = { TIME: 130, SITE: 150, NAME: 200, LINK: 100, IMG: 70, QTY: 70, RCV: 80, TEL: 120, ADDR: 260, BY: 80, STATUS: 80, MEMO: 220, ID: 90 };
+  Object.keys(widths).forEach((k) => sh.setColumnWidth(COL[k], widths[k]));
+  sh.getRange(L(COL.TIME) + '2:' + L(COL.TIME)).setNumberFormat('yyyy-mm-dd hh:mm');
+  sh.getRange(L(COL.TEL) + '2:' + L(COL.TEL)).setNumberFormat('@'); // 연락처: 맨 앞 0 이 잘리지 않게 글자로
+  [COL.QTY, COL.BY, COL.STATUS].forEach((c) => sh.getRange(L(c) + '2:' + L(c)).setHorizontalAlignment('center'));
   sh.hideColumns(COL.ID);
 
   // 상태 드롭다운 — 목록 밖 값은 경고만 (입력 거부 X)
-  sh.getRange('I2:I').setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInList(STATUSES, true).setAllowInvalid(true).build());
+  const st = sh.getRange(L(COL.STATUS) + '2:' + L(COL.STATUS));
+  st.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(STATUSES, true).setAllowInvalid(true).build());
 
-  const data = sh.getRange('A2:K');
-  const st = sh.getRange('I2:I');
+  const data = sh.getRange('A2:' + L(HEAD.length));
   sh.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$I2="입고완료"')
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$' + L(COL.STATUS) + '2="입고완료"')
       .setFontColor(COLOR.doneInk).setBackground(COLOR.done).setRanges([data]).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('요청')
       .setBackground(COLOR.req).setFontColor(COLOR.reqInk).setBold(true).setRanges([st]).build(),
@@ -542,6 +656,7 @@ function cleanInput(src, requireName) {
     qty: clip_(src.qty, LIMIT.qty),
     by: clip_(src.by, LIMIT.by),
     memo: clip_(src.memo, LIMIT.memo),
+    addr: clip_(src.addr, LIMIT.addr).replace(/\s*\n\s*/g, ' '),
     rcv: clip_(src.rcv, LIMIT.rcv),
     tel: normalizePhone(clip_(src.tel, LIMIT.tel)),
     link: '',
@@ -555,7 +670,7 @@ function cleanInput(src, requireName) {
   return out;
 }
 
-function rowToItem(v, linkFormulaText, id) {
+function rowToItem(v, linkFormulaText, id, imgFormulaText) {
   const t = v[COL.TIME - 1];
   const time = t instanceof Date ? t.getTime() : (t ? Date.parse(String(t).replace(' ', 'T')) || 0 : 0);
   const name = String(v[COL.NAME - 1]).trim();
@@ -575,7 +690,40 @@ function rowToItem(v, linkFormulaText, id) {
     memo: String(v[COL.MEMO - 1]).trim(),
     rcv: String(v[COL.RCV - 1]).trim(),
     tel: normalizePhone(v[COL.TEL - 1]),
+    addr: String(v[COL.ADDR - 1] == null ? '' : v[COL.ADDR - 1]).trim(),
+    img: imageFromFormula(imgFormulaText) || (/^https?:\/\//.test(String(v[COL.IMG - 1] || '')) ? String(v[COL.IMG - 1]) : ''),
   };
+}
+
+function colLetter(c) {
+  let s = '';
+  while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); }
+  return s;
+}
+
+function imageFormula(url) {
+  return '=IMAGE("' + String(url).replace(/"/g, '%22') + '")';
+}
+
+function imageFromFormula(f) {
+  const m = String(f || '').match(/^=\s*IMAGE\(\s*"([^"]*)"/i);
+  return m ? m[1] : '';
+}
+
+/** 상품 페이지 HTML 에서 대표 이미지 주소 (og:image, 없으면 쿠팡 썸네일 주소) */
+function ogImage(html) {
+  html = String(html || '');
+  let m = html.match(/<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+  let u = m ? m[1] : '';
+  if (!u) {
+    m = html.match(/(?:https?:)?\/\/thumbnail\d*\.coupangcdn\.com\/[^"'\s)<>]+?\.(?:jpe?g|png|webp)/i);
+    u = m ? m[0] : '';
+  }
+  if (!u) return '';
+  u = u.replace(/&amp;/g, '&');
+  if (u.indexOf('//') === 0) u = 'https:' + u;
+  return /^https?:\/\//.test(u) ? u : '';
 }
 
 /** 전화번호를 010-1234-5678 꼴로. 시트가 숫자로 바꾸며 맨 앞 0 을 잘랐어도(1012345678) 되살린다. 모르는 꼴은 그대로. */
@@ -591,5 +739,5 @@ function normalizePhone(s) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { coupangSearchUrl, isSearchUrl, extractUrl, linkFormula, urlFromFormula, normalizeStatus, safeText, cleanInput, rowToItem, normalizePhone };
+  module.exports = { coupangSearchUrl, isSearchUrl, extractUrl, linkFormula, urlFromFormula, normalizeStatus, safeText, cleanInput, rowToItem, normalizePhone, ogImage, colLetter };
 }

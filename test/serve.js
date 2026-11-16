@@ -34,7 +34,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     const sh = env.sheets['청소용품'];
     const rows = [];
-    for (let r = 1; r <= sh.getLastRow(); r++) rows.push([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((c) => sh.peek(r, c).f || sh.peek(r, c).v));
+    for (let r = 1; r <= sh.getLastRow(); r++) rows.push([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((c) => sh.peek(r, c).f || sh.peek(r, c).v));
     return res.end(JSON.stringify(rows));
   }
   const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);

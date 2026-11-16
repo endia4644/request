@@ -8,25 +8,27 @@ TZ: 'Asia/Seoul',
 KEEP_DONE_DAYS: 90
 };
 
-const HEAD = [ '등록일시', '현장', '품명', '쿠팡', '수량', '수취인', '연락처', '등록자', '상태', '메모', 'ID' ];
+const HEAD = [ '등록일시', '현장', '품명', '쿠팡', '사진', '수량', '수취인', '연락처', '주소', '등록자', '상태', '메모', 'ID' ];
 
 const COL = {
 TIME: 1,
 SITE: 2,
 NAME: 3,
 LINK: 4,
-QTY: 5,
-RCV: 6,
-TEL: 7,
-BY: 8,
-STATUS: 9,
-MEMO: 10,
-ID: 11
+IMG: 5,
+QTY: 6,
+RCV: 7,
+TEL: 8,
+ADDR: 9,
+BY: 10,
+STATUS: 11,
+MEMO: 12,
+ID: 13
 };
 
 const CONTACT_SHEET = '수취인';
 
-const CONTACT_HEAD = [ '현장', '이름', '전화번호' ];
+const CONTACT_HEAD = [ '구분', '현장', '이름', '전화번호', '주소' ];
 
 const STATUSES = [ '요청', '주문완료', '입고완료' ];
 
@@ -38,7 +40,8 @@ by: 20,
 memo: 300,
 link: 500,
 rcv: 20,
-tel: 20
+tel: 20,
+addr: 120
 };
 
 const COLOR = {
@@ -143,6 +146,9 @@ return withLock_((() => updateItem_(req)));
 case 'remove':
 return withLock_((() => removeItem_(req)));
 
+case 'thumb':
+return thumbItem_(req);
+
 default:
 return {
 ok: false,
@@ -223,11 +229,17 @@ return sh;
 }
 
 function migrate_(sh) {
-const h = sh.getRange(1, 5, 1, 2).getValues()[0];
-if (String(h[0]) === '수량' && String(h[1]) === '등록자') {
-sh.insertColumnsAfter(COL.QTY, 2);
-formatSheet_(sh);
+const width = Math.max(sh.getLastColumn(), 1);
+const head = sh.getRange(1, 1, 1, width).getValues()[0].map((v => String(v).trim()));
+if (!head[0]) return;
+let changed = false;
+for (let i = 1; i < HEAD.length; i++) {
+if (head[i] === HEAD[i] || head.indexOf(HEAD[i]) >= 0) continue;
+sh.insertColumnsAfter(i, 1);
+head.splice(i, 0, HEAD[i]);
+changed = true;
 }
+if (changed) formatSheet_(sh);
 }
 
 function contactSheet_() {
@@ -235,37 +247,66 @@ const ss = ss_();
 let sh = ss.getSheetByName(CONTACT_SHEET);
 if (!sh) {
 sh = ss.insertSheet(CONTACT_SHEET);
-sh.getRange(1, 1, 1, 3).setValues([ CONTACT_HEAD ]).setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk).setHorizontalAlignment('center');
+sh.getRange(1, 1, 1, CONTACT_HEAD.length).setValues([ CONTACT_HEAD ]).setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk).setHorizontalAlignment('center');
 sh.setFrozenRows(1);
-[ 160, 100, 140 ].forEach(((w, i) => sh.setColumnWidth(i + 1, w)));
-sh.getRange('C2:C').setNumberFormat('@');
+[ 130, 170, 90, 130, 320 ].forEach(((w, i) => sh.setColumnWidth(i + 1, w)));
+sh.getRange('D2:D').setNumberFormat('@');
 }
 return sh;
+}
+
+function contactCols_(sh) {
+const width = Math.max(sh.getLastColumn(), 1);
+const head = sh.getRange(1, 1, 1, width).getValues()[0].map((v => String(v).trim()));
+const col = {};
+CONTACT_HEAD.forEach((h => {
+let i = head.indexOf(h);
+if (i < 0 && h === '전화번호') i = head.indexOf('연락처');
+if (i < 0 && h === '이름') i = head.indexOf('성명');
+if (i < 0) {
+head.push(h);
+i = head.length - 1;
+sh.getRange(1, i + 1).setValue(h);
+}
+col[h] = i + 1;
+}));
+col.width = head.length;
+return col;
 }
 
 function readContacts_() {
 const sh = contactSheet_();
 const last = sh.getLastRow();
 if (last < 2) return [];
-return sh.getRange(2, 1, last - 1, 3).getValues().map((v => ({
-site: String(v[0]).trim(),
-name: String(v[1]).trim(),
-tel: normalizePhone(v[2])
+const col = contactCols_(sh);
+return sh.getRange(2, 1, last - 1, col.width).getValues().map((v => ({
+grp: String(v[col['구분'] - 1] || '').trim(),
+site: String(v[col['현장'] - 1] || '').trim(),
+name: String(v[col['이름'] - 1] || '').trim(),
+tel: normalizePhone(v[col['전화번호'] - 1]),
+addr: String(v[col['주소'] - 1] || '').trim()
 }))).filter((c => c.name));
 }
 
-function upsertContact_(site, name, tel) {
+function upsertContact_(site, name, tel, addr) {
 if (!name) return;
 const sh = contactSheet_();
+const col = contactCols_(sh);
 const last = sh.getLastRow();
-const rows = last >= 2 ? sh.getRange(2, 1, last - 1, 3).getValues() : [];
+const rows = last >= 2 ? sh.getRange(2, 1, last - 1, col.width).getValues() : [];
 for (let i = 0; i < rows.length; i++) {
-if (String(rows[i][0]).trim() === site && String(rows[i][1]).trim() === name) {
-if (tel && normalizePhone(rows[i][2]) !== tel) sh.getRange(i + 2, 3).setValue(safeText(tel));
+if (String(rows[i][col['현장'] - 1]).trim() === site && String(rows[i][col['이름'] - 1]).trim() === name) {
+if (tel && normalizePhone(rows[i][col['전화번호'] - 1]) !== tel) sh.getRange(i + 2, col['전화번호']).setValue(safeText(tel));
+if (addr && String(rows[i][col['주소'] - 1]).trim() !== addr) sh.getRange(i + 2, col['주소']).setValue(safeText(addr));
 return;
 }
 }
-sh.getRange(last + 1, 1, 1, 3).setValues([ [ safeText(site), safeText(name), safeText(tel) ] ]);
+const row = new Array(col.width).fill('');
+row[col['현장'] - 1] = safeText(site);
+row[col['이름'] - 1] = safeText(name);
+row[col['전화번호'] - 1] = safeText(tel);
+row[col['주소'] - 1] = safeText(addr);
+sh.getRange(last + 1, 1, 1, col.width).setValues([ row ]);
 }
 
 function readRows_(sh) {
@@ -275,12 +316,14 @@ const n = last - 1;
 const rng = sh.getRange(2, 1, n, HEAD.length);
 const values = rng.getValues();
 const links = sh.getRange(2, COL.LINK, n, 1).getFormulas();
+const imgs = sh.getRange(2, COL.IMG, n, 1).getFormulas();
 const out = [];
 for (let i = 0; i < n; i++) {
 out.push({
 row: i + 2,
 values: values[i],
-linkFormula: links[i][0]
+linkFormula: links[i][0],
+imgFormula: imgs[i][0]
 });
 }
 return out;
@@ -302,7 +345,7 @@ row: r.row,
 id: id
 });
 }
-const it = rowToItem(r.values, r.linkFormula, id);
+const it = rowToItem(r.values, r.linkFormula, id, r.imgFormula);
 it.row = r.row;
 if (!all && it.status === '입고완료' && it.t && now - it.t > CFG.KEEP_DONE_DAYS * 864e5) return;
 items.push(it);
@@ -338,8 +381,20 @@ dup: true
 const id = req.cid && /^[A-Za-z0-9_-]{6,40}$/.test(String(req.cid)) ? String(req.cid) : newId_();
 const row = sh.getLastRow() + 1;
 const now = new Date;
-sh.getRange(row, 1, 1, HEAD.length).setValues([ [ now, safeText(it.site), safeText(it.name), '', safeText(it.qty), safeText(it.rcv), safeText(it.tel), safeText(it.by), '요청', safeText(it.memo), id ] ]);
-if (it.rcv) upsertContact_(it.site, it.rcv, it.tel);
+const vals = new Array(HEAD.length).fill('');
+vals[COL.TIME - 1] = now;
+vals[COL.SITE - 1] = safeText(it.site);
+vals[COL.NAME - 1] = safeText(it.name);
+vals[COL.QTY - 1] = safeText(it.qty);
+vals[COL.RCV - 1] = safeText(it.rcv);
+vals[COL.TEL - 1] = safeText(it.tel);
+vals[COL.ADDR - 1] = safeText(it.addr);
+vals[COL.BY - 1] = safeText(it.by);
+vals[COL.STATUS - 1] = '요청';
+vals[COL.MEMO - 1] = safeText(it.memo);
+vals[COL.ID - 1] = id;
+sh.getRange(row, 1, 1, HEAD.length).setValues([ vals ]);
+if (it.rcv) upsertContact_(it.site, it.rcv, it.tel, it.addr);
 sh.getRange(row, COL.LINK).setFormula(linkFormula(it.link || coupangSearchUrl(it.name), it.link ? linkLabel(it.link) : '쿠팡에서 찾기'));
 return {
 ok: true,
@@ -375,10 +430,13 @@ if (f.memo !== undefined) sh.getRange(r.row, COL.MEMO).setValue(safeText(it.memo
 if (f.site !== undefined) sh.getRange(r.row, COL.SITE).setValue(safeText(it.site));
 if (f.rcv !== undefined) sh.getRange(r.row, COL.RCV).setValue(safeText(it.rcv));
 if (f.tel !== undefined) sh.getRange(r.row, COL.TEL).setValue(safeText(it.tel));
-if ((f.rcv !== undefined || f.tel !== undefined) && it.rcv) {
+if (f.addr !== undefined) sh.getRange(r.row, COL.ADDR).setValue(safeText(it.addr));
+if (f.rcv !== undefined || f.tel !== undefined || f.addr !== undefined) {
+const rcv = f.rcv !== undefined ? it.rcv : String(r.values[COL.RCV - 1]).trim();
 const site = f.site !== undefined ? it.site : String(r.values[COL.SITE - 1]).trim();
 const tel = f.tel !== undefined ? it.tel : normalizePhone(r.values[COL.TEL - 1]);
-upsertContact_(site, it.rcv, tel);
+const addr = f.addr !== undefined ? it.addr : String(r.values[COL.ADDR - 1]).trim();
+if (rcv) upsertContact_(site, rcv, tel, addr);
 }
 if (f.name !== undefined) {
 if (!it.name) return {
@@ -392,9 +450,103 @@ const name = f.name !== undefined ? it.name : String(r.values[COL.NAME - 1]);
 let link = f.link !== undefined ? it.link : urlFromFormula(r.linkFormula);
 if (link && isSearchUrl(link)) link = '';
 sh.getRange(r.row, COL.LINK).setFormula(linkFormula(link || coupangSearchUrl(name), link ? linkLabel(link) : '쿠팡에서 찾기'));
+if (f.link !== undefined) sh.getRange(r.row, COL.IMG).clearContent();
 }
 return {
 ok: true
+};
+}
+
+function thumbItem_(req) {
+const sh = sheet_();
+const r = findRow_(sh, req.id);
+if (!r) return {
+ok: false,
+error: '이미 지워진 항목입니다',
+code: 'GONE'
+};
+const link = urlFromFormula(r.linkFormula) || extractUrl(String(r.values[COL.LINK - 1]));
+if (!link || isSearchUrl(link)) return {
+ok: false,
+error: '상품 링크가 없어요',
+code: 'NOLINK'
+};
+const got = fetchThumb_(link);
+if (!got.img) return {
+ok: false,
+error: got.error,
+code: 'BLOCKED',
+tries: got.tries
+};
+withLock_((() => {
+const again = findRow_(sh, req.id);
+if (again) sh.getRange(again.row, COL.IMG).setFormula(imageFormula(got.img));
+}));
+return {
+ok: true,
+img: got.img
+};
+}
+
+function fetchThumb_(link) {
+const cache = CacheService.getScriptCache();
+const key = 'img:' + Utilities.base64EncodeWebSafe(link).slice(0, 200);
+const hit = cache.get(key);
+if (hit) return {
+img: hit
+};
+const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+const opt = follow => ({
+muteHttpExceptions: true,
+followRedirects: follow,
+headers: {
+'User-Agent': UA,
+'Accept-Language': 'ko-KR,ko;q=0.9',
+Accept: 'text/html,application/xhtml+xml'
+}
+});
+const tries = [];
+let url = link;
+if (/link\.coupang\.com/.test(link)) {
+try {
+const res = UrlFetchApp.fetch(link, opt(false));
+const loc = res.getHeaders().Location || res.getHeaders().location;
+tries.push('짧은주소 ' + res.getResponseCode());
+if (loc) url = loc;
+} catch (e) {
+tries.push('짧은주소 오류');
+}
+}
+const cands = [ url ];
+const m = url.match(/products\/(\d+)/);
+if (m) {
+const q = url.split('?')[1] || '';
+cands.push('https://m.coupang.com/vm/products/' + m[1] + (q ? '?' + q : ''));
+}
+for (let i = 0; i < cands.length; i++) {
+try {
+const res = UrlFetchApp.fetch(cands[i], opt(true));
+const code = res.getResponseCode();
+tries.push((/m\.coupang/.test(cands[i]) ? '모바일 ' : '') + code);
+if (code === 200) {
+const img = ogImage(res.getContentText());
+if (img) {
+try {
+cache.put(key, img, 21600);
+} catch (e) {}
+return {
+img: img,
+tries: tries
+};
+}
+}
+} catch (e) {
+tries.push('오류');
+}
+}
+return {
+error: '쿠팡에서 사진을 못 받았어요 (' + tries.join(', ') + ')',
+tries: tries
 };
 }
 
@@ -522,19 +674,33 @@ ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(CF
 }
 
 function formatSheet_(sh) {
+const L = c => colLetter(c);
 sh.getRange(1, 1, 1, HEAD.length).setValues([ HEAD ]).setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk).setHorizontalAlignment('center');
 sh.setFrozenRows(1);
-const widths = [ 130, 120, 200, 110, 70, 80, 120, 80, 80, 220, 90 ];
-widths.forEach(((w, i) => sh.setColumnWidth(i + 1, w)));
-sh.getRange('A2:A').setNumberFormat('yyyy-mm-dd hh:mm');
-sh.getRange('G2:G').setNumberFormat('@');
-sh.getRange('E2:E').setHorizontalAlignment('center');
-sh.getRange('H2:I').setHorizontalAlignment('center');
+const widths = {
+TIME: 130,
+SITE: 150,
+NAME: 200,
+LINK: 100,
+IMG: 70,
+QTY: 70,
+RCV: 80,
+TEL: 120,
+ADDR: 260,
+BY: 80,
+STATUS: 80,
+MEMO: 220,
+ID: 90
+};
+Object.keys(widths).forEach((k => sh.setColumnWidth(COL[k], widths[k])));
+sh.getRange(L(COL.TIME) + '2:' + L(COL.TIME)).setNumberFormat('yyyy-mm-dd hh:mm');
+sh.getRange(L(COL.TEL) + '2:' + L(COL.TEL)).setNumberFormat('@');
+[ COL.QTY, COL.BY, COL.STATUS ].forEach((c => sh.getRange(L(c) + '2:' + L(c)).setHorizontalAlignment('center')));
 sh.hideColumns(COL.ID);
-sh.getRange('I2:I').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(STATUSES, true).setAllowInvalid(true).build());
-const data = sh.getRange('A2:K');
-const st = sh.getRange('I2:I');
-sh.setConditionalFormatRules([ SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$I2="입고완료"').setFontColor(COLOR.doneInk).setBackground(COLOR.done).setRanges([ data ]).build(), SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('요청').setBackground(COLOR.req).setFontColor(COLOR.reqInk).setBold(true).setRanges([ st ]).build(), SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('주문완료').setBackground(COLOR.ord).setFontColor(COLOR.ordInk).setBold(true).setRanges([ st ]).build() ]);
+const st = sh.getRange(L(COL.STATUS) + '2:' + L(COL.STATUS));
+st.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(STATUSES, true).setAllowInvalid(true).build());
+const data = sh.getRange('A2:' + L(HEAD.length));
+sh.setConditionalFormatRules([ SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$' + L(COL.STATUS) + '2="입고완료"').setFontColor(COLOR.doneInk).setBackground(COLOR.done).setRanges([ data ]).build(), SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('요청').setBackground(COLOR.req).setFontColor(COLOR.reqInk).setBold(true).setRanges([ st ]).build(), SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('주문완료').setBackground(COLOR.ord).setFontColor(COLOR.ordInk).setBold(true).setRanges([ st ]).build() ]);
 }
 
 function coupangSearchUrl(name) {
@@ -588,6 +754,7 @@ site: clip_(src.site, LIMIT.site),
 qty: clip_(src.qty, LIMIT.qty),
 by: clip_(src.by, LIMIT.by),
 memo: clip_(src.memo, LIMIT.memo),
+addr: clip_(src.addr, LIMIT.addr).replace(/\s*\n\s*/g, ' '),
 rcv: clip_(src.rcv, LIMIT.rcv),
 tel: normalizePhone(clip_(src.tel, LIMIT.tel)),
 link: ''
@@ -605,7 +772,7 @@ out.link = u;
 return out;
 }
 
-function rowToItem(v, linkFormulaText, id) {
+function rowToItem(v, linkFormulaText, id, imgFormulaText) {
 const t = v[COL.TIME - 1];
 const time = t instanceof Date ? t.getTime() : t ? Date.parse(String(t).replace(' ', 'T')) || 0 : 0;
 const name = String(v[COL.NAME - 1]).trim();
@@ -624,8 +791,43 @@ by: String(v[COL.BY - 1]).trim(),
 status: normalizeStatus(v[COL.STATUS - 1]) || String(v[COL.STATUS - 1]).trim(),
 memo: String(v[COL.MEMO - 1]).trim(),
 rcv: String(v[COL.RCV - 1]).trim(),
-tel: normalizePhone(v[COL.TEL - 1])
+tel: normalizePhone(v[COL.TEL - 1]),
+addr: String(v[COL.ADDR - 1] == null ? '' : v[COL.ADDR - 1]).trim(),
+img: imageFromFormula(imgFormulaText) || (/^https?:\/\//.test(String(v[COL.IMG - 1] || '')) ? String(v[COL.IMG - 1]) : '')
 };
+}
+
+function colLetter(c) {
+let s = '';
+while (c > 0) {
+const m = (c - 1) % 26;
+s = String.fromCharCode(65 + m) + s;
+c = Math.floor((c - 1) / 26);
+}
+return s;
+}
+
+function imageFormula(url) {
+return '=IMAGE("' + String(url).replace(/"/g, '%22') + '")';
+}
+
+function imageFromFormula(f) {
+const m = String(f || '').match(/^=\s*IMAGE\(\s*"([^"]*)"/i);
+return m ? m[1] : '';
+}
+
+function ogImage(html) {
+html = String(html || '');
+let m = html.match(/<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["']/i) || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+let u = m ? m[1] : '';
+if (!u) {
+m = html.match(/(?:https?:)?\/\/thumbnail\d*\.coupangcdn\.com\/[^"'\s)<>]+?\.(?:jpe?g|png|webp)/i);
+u = m ? m[0] : '';
+}
+if (!u) return '';
+u = u.replace(/&amp;/g, '&');
+if (u.indexOf('//') === 0) u = 'https:' + u;
+return /^https?:\/\//.test(u) ? u : '';
 }
 
 function normalizePhone(s) {
@@ -650,6 +852,8 @@ normalizeStatus: normalizeStatus,
 safeText: safeText,
 cleanInput: cleanInput,
 rowToItem: rowToItem,
-normalizePhone: normalizePhone
+normalizePhone: normalizePhone,
+ogImage: ogImage,
+colLetter: colLetter
 };
 }

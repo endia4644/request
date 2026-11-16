@@ -167,6 +167,10 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
 .rsite .ri i.입고완료::before { background: var(--done); }
 .rsite .ri em { font-style: normal; font-size: 12px; color: var(--sub); align-self: center; }
 .rmore { width: 100%; height: 40px; font-size: 14px; font-weight: 600; color: var(--accent); }
+.thumb { width: 38px; height: 38px; border-radius: 8px; object-fit: cover; background: var(--field); flex: none; border: 1px solid var(--line); }
+.item .top .thumb { width: 52px; height: 52px; border-radius: 10px; }
+.sline.hasimg { grid-template-columns: 44px 38px 1fr auto 10px; }
+.scard .addr { font-size: 12px; color: var(--faint); margin-top: 2px; overflow-wrap: anywhere; }
 .scard { padding: 14px 14px 6px; margin-top: 10px; }
 .scard .sh { display: flex; align-items: baseline; gap: 8px; }
 .scard .sh b { flex: 1; font-size: 17px; letter-spacing: -0.01em; overflow-wrap: anywhere; }
@@ -423,6 +427,14 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     </div>
 
     <div class="row">
+      <label class="lbl" for="fAddr">수취인 주소</label>
+      <div class="sugg">
+        <input class="field" id="fAddr" placeholder="자주 쓰는 주소는 누르면 목록이 떠요" maxlength="120" autocomplete="off" autocorrect="off" spellcheck="false">
+        <div class="sugglist" id="fAddrList" hidden></div>
+      </div>
+    </div>
+
+    <div class="row">
       <label class="lbl" for="fLink">쿠팡 상품 링크 (선택)</label>
       <div class="linkrow">
         <input class="field" id="fLink" placeholder="쿠팡 앱 → 공유 → 링크 복사" inputmode="url">
@@ -565,6 +577,29 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     });
   }
 
+  // ── 쿠팡 사진 ─────────────────────────────────────────────
+  var thumbTried = load('thumbTried', {}); // id → 실패 시각 (하루 지나면 다시 시도)
+  var thumbBusy = false, thumbToasted = false;
+  function fetchThumb(id, loud) {
+    var it = findItem(id); if (!it) return Promise.resolve();
+    thumbBusy = true;
+    return call({ action: 'thumb', id: id }).then(function (r) {
+      thumbBusy = false;
+      if (r.ok && r.img) { it.img = r.img; render(); if (loud) toast('쿠팡 사진을 가져왔어요'); return true; }
+      thumbTried[id] = Date.now(); save('thumbTried', thumbTried);
+      if (loud || !thumbToasted) { thumbToasted = true; toast(r.error || '쿠팡 사진을 못 가져왔어요'); }
+      return false;
+    }, function () { thumbBusy = false; return false; });
+  }
+  function pumpThumbs() {
+    if (thumbBusy || state.writes) return;
+    var todo = state.items.filter(function (it) {
+      return it.custom && /coupang\.com/.test(it.link) && !it.img && !it.pending && !(thumbTried[it.id] && Date.now() - thumbTried[it.id] < 864e5);
+    });
+    if (!todo.length) return;
+    fetchThumb(todo[0].id, false).then(function (ok) { if (ok) setTimeout(pumpThumbs, 300); });
+  }
+
   function apply(items) {
     // 다른 사람이 새로 올린 것 알림
     if (state.prevIds) {
@@ -579,6 +614,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     state.items = items;
     state.loaded = true;
     render();
+    setTimeout(pumpThumbs, 500);
   }
 
   // ── 목록 그리기 ────────────────────────────────────────────
@@ -638,14 +674,14 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   function rcvCandidates() {
     var map = {};
     state.contacts.forEach(function (c) {
-      map[c.site + '|' + c.name] = { name: c.name, tel: c.tel || '', site: c.site, uses: 0, last: 0 };
+      map[c.site + '|' + c.name] = { name: c.name, tel: c.tel || '', addr: c.addr || '', site: c.site, uses: 0, last: 0 };
     });
     state.items.forEach(function (it) {
       if (!it.rcv) return;
       var k = (it.site || '') + '|' + it.rcv;
-      var c = map[k] || (map[k] = { name: it.rcv, tel: '', site: it.site || '', uses: 0, last: 0 });
+      var c = map[k] || (map[k] = { name: it.rcv, tel: '', addr: '', site: it.site || '', uses: 0, last: 0 });
       c.uses++;
-      if ((it.t || 0) >= c.last) { c.last = it.t || 0; if (it.tel) c.tel = it.tel; }
+      if ((it.t || 0) >= c.last) { c.last = it.t || 0; if (it.tel) c.tel = it.tel; if (it.addr) c.addr = it.addr; }
     });
     return Object.keys(map).map(function (k) { return map[k]; });
   }
@@ -655,7 +691,26 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     if (!site || $('fRcv').value.trim()) return;
     var cands = rcvCandidates().filter(function (c) { return c.site === site; })
       .sort(function (a, b) { return b.last - a.last || b.uses - a.uses; });
-    if (cands.length && (cands[0].uses > 0 || cands.length === 1)) { $('fRcv').value = cands[0].name; $('fTel').value = cands[0].tel; }
+    if (cands.length && (cands[0].uses > 0 || cands.length === 1)) {
+      $('fRcv').value = cands[0].name; $('fTel').value = cands[0].tel;
+      if (!$('fAddr').value.trim()) {
+        var ad = cands[0].addr || (addrCandidates().filter(function (a) { return a.site === site && a.uses > 0; })[0] || {}).name || '';
+        $('fAddr').value = ad;
+      }
+    }
+  }
+  // 주소 후보: 기록에 여러 번 쓴 주소 (지금 현장 것 먼저) + 수취인 탭의 주소
+  function addrCandidates() {
+    var map = {}, site = $('fSite').value.trim();
+    var add = function (a, st, n, t) {
+      a = String(a || '').trim(); if (!a) return;
+      var c = map[a] || (map[a] = { name: a, site: st || '', uses: 0, last: 0 });
+      c.uses += n; c.last = Math.max(c.last, t || 0); if (st === site) c.site = st;
+    };
+    state.items.forEach(function (it) { add(it.addr, it.site, 1, it.t); });
+    state.contacts.forEach(function (c) { add(c.addr, c.site, 0, 0); });
+    return Object.keys(map).map(function (k) { return map[k]; })
+      .sort(function (a, b) { return (b.site === site) - (a.site === site) || b.uses - a.uses || b.last - a.last; });
   }
   function siteCandidates() {
     var map = {};
@@ -682,30 +737,37 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     return esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + q.trim().length)) + '</mark>' + esc(name.slice(i + q.trim().length));
   }
   // 입력 칸 아래 제안 목록. kind: 'name' | 'site'
-  var SUGG = { name: ['fName', 'fNameList'], site: ['fSite', 'fSiteList'], rcv: ['fRcv', 'fRcvList'] };
+  var SUGG = { name: ['fName', 'fNameList'], site: ['fSite', 'fSiteList'], rcv: ['fRcv', 'fRcvList'], addr: ['fAddr', 'fAddrList'] };
   function showSugg(kind) {
     var input = $(SUGG[kind][0]), box = $(SUGG[kind][1]);
     var q = input.value;
-    var list = kind === 'name' ? nameCandidates() : kind === 'site' ? siteCandidates() : rcvCandidates();
+    var list = kind === 'name' ? nameCandidates() : kind === 'site' ? siteCandidates() : kind === 'rcv' ? rcvCandidates() : addrCandidates();
     var scored;
-    if (kind === 'rcv') {
+    if (kind === 'addr') {
+      var nq = norm(q);
+      scored = list.filter(function (c) { return !nq ? true : norm(c.name).indexOf(nq) >= 0 && norm(c.name) !== nq; });
+    } else if (kind === 'rcv') {
       // 지금 고른 현장 사람을 먼저
       var site = $('fSite').value.trim();
       scored = list.filter(function (c) { return !q.trim() ? (site ? c.site === site : c.uses > 0) : matchScore(c.name, q) > 0; })
         .sort(function (a, b) { return (b.site === site) - (a.site === site) || b.last - a.last || b.uses - a.uses || a.name.localeCompare(b.name, 'ko'); });
     } else if (!q.trim()) {
-      // 비어 있으면: 품명은 최근에 쓴 것, 현장은 자주 쓰는 곳
-      scored = list.filter(function (c) { return c.uses > 0; })
-        .sort(function (a, b) { return kind === 'site' ? b.uses - a.uses : b.last - a.last; });
+      // 비어 있으면: 품명은 최근에 쓴 것, 현장은 자주 쓰는 곳 → 명단에만 있는 현장(가나다)
+      scored = list.filter(function (c) { return c.uses > 0 || (kind === 'site' && c.listed); })
+        .sort(function (a, b) { return kind === 'site' ? (b.uses - a.uses || a.name.localeCompare(b.name, 'ko')) : b.last - a.last; });
     } else {
       scored = list.map(function (c) { return { c: c, s: matchScore(c.name, q) }; })
         .filter(function (x) { return x.s > 0 && norm(x.c.name) !== norm(q); })
         .sort(function (a, b) { return b.s - a.s || b.c.uses - a.c.uses || b.c.last - a.c.last || a.c.name.localeCompare(b.c.name, 'ko'); })
         .map(function (x) { return x.c; });
     }
-    scored = scored.slice(0, 8);
+    scored = scored.slice(0, kind === 'site' || kind === 'rcv' ? 30 : 8);
     if (!scored.length) { box.hidden = true; return; }
     box.innerHTML = scored.map(function (c, i) {
+      if (kind === 'addr') {
+        return '<button type="button" data-i="' + i + '"><span class="sn">' + highlight(c.name, q) + '</span>' +
+          (c.uses ? '<span class="su">' + c.uses + '번</span>' : '') + '</button>';
+      }
       if (kind === 'rcv') {
         return '<button type="button" data-i="' + i + '"><span class="sn">' + highlight(c.name, q) +
           (c.site ? ' <span class="su">' + esc(c.site) + '</span>' : '') + '</span><span class="su">' + esc(c.tel || '') + '</span></button>';
@@ -728,11 +790,17 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     } else if (kind === 'site') {
       var changed = $('fSite').value.trim() !== c.name;
       $('fSite').value = c.name;
-      if (changed) { $('fRcv').value = ''; $('fTel').value = ''; }
+      if (changed) { $('fRcv').value = ''; $('fTel').value = ''; $('fAddr').value = ''; }
       autofillRcv();
-    } else {
+      if (!$('fRcv').value) setTimeout(function () { $('fRcv').focus(); }, 50); // 바로 그 현장 사람 목록
+    } else if (kind === 'rcv') {
       $('fRcv').value = c.name;
       $('fTel').value = c.tel || '';
+      // 그 사람 주소 → 없으면 이 현장에서 자주 쓴 주소
+      var ad = c.addr || (addrCandidates().filter(function (a) { return a.site === $('fSite').value.trim() && a.uses > 0; })[0] || {}).name || '';
+      if (ad && !$('fAddr').value.trim()) $('fAddr').value = ad;
+    } else {
+      $('fAddr').value = c.name;
     }
     hideSugg(kind);
   }
@@ -749,7 +817,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   function telLink(tel) { return tel ? '<a href="tel:' + esc(tel.replace(/[^0-9+]/g, '')) + '">' + esc(tel) + '</a>' : ''; }
   // 현장의 수취인: 가장 최근 기록에 적힌 사람, 없으면 수취인 목록의 첫 사람
   function siteContact(site, its) {
-    for (var i = 0; i < its.length; i++) if (its[i].rcv) return { name: its[i].rcv, tel: its[i].tel };
+    for (var i = 0; i < its.length; i++) if (its[i].rcv) return { name: its[i].rcv, tel: its[i].tel, addr: its[i].addr || '' };
     for (var j = 0; j < state.contacts.length; j++) if (state.contacts[j].site === site) return state.contacts[j];
     return null;
   }
@@ -775,10 +843,13 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       var its = g.items.slice().sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
       var who = siteContact(g.site, its);
       return '<div class="card scard"><div class="sh"><b>' + esc(g.site || '현장 미지정') + '</b><span>' + its.length + '건</span></div>' +
-        (who ? '<div class="who">수취인 ' + esc(who.name) + (who.tel ? ' · ' + telLink(who.tel) : '') + '</div>' : '') +
+        (who ? '<div class="who">수취인 ' + esc(who.name) + (who.tel ? ' · ' + telLink(who.tel) : '') + '</div>' +
+          (who.addr ? '<div class="addr">' + esc(who.addr) + '</div>' : '') : '') +
         '<div class="lines">' + its.map(function (it) {
           var d = new Date(it.t || 0);
-          return '<button type="button" class="sline" data-id="' + esc(it.id) + '"><span class="d">' + (d.getMonth() + 1) + '/' + d.getDate() + '</span>' +
+          var hasImg = its.some(function (x) { return x.img; });
+          return '<button type="button" class="sline' + (hasImg ? ' hasimg' : '') + '" data-id="' + esc(it.id) + '"><span class="d">' + (d.getMonth() + 1) + '/' + d.getDate() + '</span>' +
+            (hasImg ? (it.img ? '<img class="thumb" src="' + esc(it.img) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '<span></span>') : '') +
             '<span class="n">' + esc(it.name) + '</span><span class="q">' + esc(it.qty) + '</span><i class="dot ' + esc(it.status) + '"></i></button>';
         }).join('') + '</div></div>';
     }).join('');
@@ -1030,11 +1101,13 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   function itemHtml(it) {
     var fresh = it.by !== me && it.t && Date.now() - it.t < 30 * 60000 && it.status === '요청';
     var meta = [it.site, it.by, ago(it.t)].filter(Boolean).map(esc).join(' · ') +
-      (it.rcv ? '<br>수취인 ' + esc(it.rcv) + (it.tel ? ' · ' + telLink(it.tel) : '') : '');
+      (it.rcv ? '<br>수취인 ' + esc(it.rcv) + (it.tel ? ' · ' + telLink(it.tel) : '') : '') +
+      (it.addr ? '<br><span style="color:var(--faint)">' + esc(it.addr) + '</span>' : '');
     var next = NEXT[it.status];
     return '<li class="card item' + (it.pending ? ' pending' : '') + (it.status === '입고완료' ? ' done' : '') + '" data-id="' + esc(it.id) + '">' +
       (fresh ? '<span class="newdot"></span>' : '') +
-      '<div class="top"><div class="nm">' + esc(it.name) + (fresh ? '<span class="newtag">NEW</span>' : '') + '</div>' +
+      '<div class="top">' + (it.img ? '<img class="thumb" src="' + esc(it.img) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '') +
+      '<div class="nm">' + esc(it.name) + (fresh ? '<span class="newtag">NEW</span>' : '') + '</div>' +
       (it.qty ? '<span class="q">' + esc(it.qty) + '</span>' : '') + '</div>' +
       '<div class="meta">' + (state.tab ? '' : '<span class="badge ' + esc(it.status) + '">' + esc(it.status) + '</span> ') + meta + '</div>' +
       (it.memo ? '<div class="memo">' + esc(it.memo) + '</div>' : '') +
@@ -1103,7 +1176,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   // 평소엔 품명 칸만 보이고, 누르면 나머지가 펼쳐진다 (목록이 첫 화면에 보이게)
   function expandForm(on) {
     $('addExtra').hidden = !on;
-    if (!on) { hideSugg('name'); hideSugg('site'); hideSugg('rcv'); }
+    if (!on) { hideSugg('name'); hideSugg('site'); hideSugg('rcv'); hideSugg('addr'); }
     if (!on) { $('fName').value = ''; $('fLink').value = ''; $('fMemo').value = ''; $('fQty').value = '1'; updatePreview(); $('fName').blur(); }
   }
 
@@ -1115,11 +1188,11 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var link = extractUrl(rawLink);
     if (rawLink && !link) { toast('링크는 https:// 로 시작해야 해요'); $('fLink').focus(); return; }
     var site = $('fSite').value.trim();
-    var rcv = $('fRcv').value.trim(), tel = phoneFmt($('fTel').value);
-    var req = { action: 'add', cid: cid(), name: name, qty: qtyText(), site: site, rcv: rcv, tel: tel, by: me, memo: $('fMemo').value.trim(), link: link };
-    save('site', site); save('rcv', rcv); save('tel', tel);
+    var rcv = $('fRcv').value.trim(), tel = phoneFmt($('fTel').value), addr = $('fAddr').value.trim();
+    var req = { action: 'add', cid: cid(), name: name, qty: qtyText(), site: site, rcv: rcv, tel: tel, addr: addr, by: me, memo: $('fMemo').value.trim(), link: link };
+    save('site', site); save('rcv', rcv); save('tel', tel); save('addr', addr);
 
-    var temp = { id: req.cid, t: Date.now(), site: site, name: name, qty: req.qty, rcv: rcv, tel: tel, by: me, memo: req.memo, status: '요청',
+    var temp = { id: req.cid, t: Date.now(), site: site, name: name, qty: req.qty, rcv: rcv, tel: tel, addr: addr, by: me, memo: req.memo, status: '요청',
       link: link || coupangSearch(name), custom: !!link, pending: true };
     state.items.unshift(temp);
     if (state.tab !== '요청' && state.tab !== '') state.tab = '요청';
@@ -1159,6 +1232,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       '<div class="row"><label class="lbl" for="eSite">현장</label><input class="field" id="eSite" list="dlSites" maxlength="40" value="' + esc(it.site) + '"></div>' +
       '<div class="row" style="display:grid;grid-template-columns:1fr 1.2fr;gap:8px"><div><label class="lbl" for="eRcv">수취인</label><input class="field" id="eRcv" maxlength="20" value="' + esc(it.rcv || '') + '"></div>' +
       '<div><label class="lbl" for="eTel">연락처</label><input class="field" id="eTel" inputmode="tel" maxlength="20" value="' + esc(it.tel || '') + '"></div></div>' +
+      '<div class="row"><label class="lbl" for="eAddr">주소</label><input class="field" id="eAddr" maxlength="120" value="' + esc(it.addr || '') + '"></div>' +
+      (it.custom ? '<div class="row"><button type="button" class="linkbtn2" id="eThumb" style="width:100%">' + (it.img ? '쿠팡 사진 다시 가져오기' : '쿠팡 사진 가져오기') + '</button></div>' : '') +
       '<div class="row"><label class="lbl" for="eLink">쿠팡 상품 링크</label><input class="field" id="eLink" inputmode="url" placeholder="비우면 검색 링크" value="' + esc(it.custom ? it.link : '') + '"></div>' +
       '<div class="row"><label class="lbl" for="eMemo">메모</label><textarea class="field" id="eMemo" maxlength="300">' + esc(it.memo) + '</textarea></div>' +
       '<div class="btnrow"><button type="button" class="ghost danger" id="eDel">삭제</button><button type="button" class="primary" id="eSave">저장</button></div>',
@@ -1168,6 +1243,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           cur = b.getAttribute('data-s');
           root.querySelectorAll('#eSeg button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
         });
+        var tb = root.querySelector('#eThumb');
+        if (tb) tb.onclick = function () { closeSheet(); delete thumbTried[id]; fetchThumb(id, true); };
         root.querySelector('#eDel').addEventListener('click', function () {
           if (!confirm('"' + it.name + '" 을(를) 지울까요? 시트에서도 지워집니다.')) return;
           closeSheet();
@@ -1189,13 +1266,15 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           if (v('#eMemo') !== it.memo) f.memo = v('#eMemo');
           if (v('#eRcv') !== (it.rcv || '')) f.rcv = v('#eRcv');
           if (phoneFmt(v('#eTel')) !== (it.tel || '')) f.tel = phoneFmt(v('#eTel'));
+          if (v('#eAddr') !== (it.addr || '')) f.addr = v('#eAddr');
           if (link !== (it.custom ? it.link : '')) f.link = link;
           closeSheet();
           if (!Object.keys(f).length) return;
           var before = JSON.parse(JSON.stringify(it));
           if (f.status) it.status = f.status;
-          ['name', 'qty', 'site', 'memo', 'rcv', 'tel'].forEach(function (k) { if (f[k] !== undefined) it[k] = f[k]; });
-          if (f.rcv !== undefined || f.tel !== undefined) state.contactsAt = 0;
+          ['name', 'qty', 'site', 'memo', 'rcv', 'tel', 'addr'].forEach(function (k) { if (f[k] !== undefined) it[k] = f[k]; });
+          if (f.rcv !== undefined || f.tel !== undefined || f.addr !== undefined) state.contactsAt = 0;
+          if (f.link !== undefined) { it.img = ''; delete thumbTried[it.id]; }
           if (f.link !== undefined || f.name !== undefined) {
             var l = f.link !== undefined ? f.link : (it.custom ? it.link : '');
             it.custom = !!l; it.link = l || coupangSearch(it.name);
@@ -1368,13 +1447,13 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   }
 
   // 목록 시트 + 품목별 합계 시트
-  function buildXlsx(items) {
+  function buildXlsx(items, sheetName) {
     var list = {
       name: '목록',
-      cols: [{ h: '등록일시', w: 17 }, { h: '현장', w: 22 }, { h: '품명', w: 28 }, { h: '수량', w: 9 }, { h: '수취인', w: 10 }, { h: '연락처', w: 15 },
+      cols: [{ h: '등록일시', w: 17 }, { h: '현장', w: 22 }, { h: '품명', w: 28 }, { h: '수량', w: 9 }, { h: '수취인', w: 10 }, { h: '연락처', w: 15 }, { h: '주소', w: 34 },
         { h: '상태', w: 10 }, { h: '등록자', w: 10 }, { h: '메모', w: 36 }, { h: '쿠팡', w: 13 }],
       rows: items.map(function (it) {
-        return [{ d: it.t }, { s: it.site }, { s: it.name }, { s: it.qty }, { s: it.rcv }, { s: it.tel }, { s: it.status }, { s: it.by }, { s: it.memo },
+        return [{ d: it.t }, { s: it.site }, { s: it.name }, { s: it.qty }, { s: it.rcv }, { s: it.tel }, { s: it.addr }, { s: it.status }, { s: it.by }, { s: it.memo },
           { link: it.link || coupangSearch(it.name), label: it.custom ? '쿠팡 상품' : '쿠팡에서 찾기' }];
       }),
     };
@@ -1387,29 +1466,32 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           { link: g.link || coupangSearch(g.name), label: g.link ? '쿠팡 상품' : '쿠팡에서 찾기' }];
       }),
     };
-    return buildWorkbook([orderSheet(items), list, total]);
+    return buildWorkbook([orderSheet(items, sheetName), list, total]);
   }
 
   // 평소 쓰는 발주서 모양: 묶음이 옆으로 (B~F, H~L, N~R, …), 묶음마다 현장명|품목|링크|수량|수취인 정보.
   // 묶음 = 현장 이름 첫 단어가 두 현장 이상 같으면 그 단어(예: '스토어 홍대'·'스토어 명동' → 스토어), 나머지는 '기타'.
-  function orderSheet(items) {
+  function orderSheet(items, sheetName) {
     var bySite = {};
     items.forEach(function (it) { var k = it.site || '현장 미지정'; (bySite[k] = bySite[k] || []).push(it); });
     var sites = Object.keys(bySite);
     var firstWord = function (n) { return String(n).split(/\s+/)[0]; };
     var wordCount = {};
     sites.forEach(function (n) { if (/\s/.test(n)) wordCount[firstWord(n)] = (wordCount[firstWord(n)] || 0) + 1; });
+    // 수취인 탭(오션 명단)에 '구분'이 있으면 그걸로 묶는다
+    var grpOf = {};
+    state.contacts.forEach(function (c) { if (c.site && c.grp && !grpOf[c.site]) grpOf[c.site] = c.grp; });
     var groups = {};
     sites.forEach(function (n) {
-      var g = /\s/.test(n) && wordCount[firstWord(n)] >= 2 ? firstWord(n) : '기타';
+      var g = grpOf[n] || (/\s/.test(n) && wordCount[firstWord(n)] >= 2 ? firstWord(n) : '기타');
       (groups[g] = groups[g] || []).push(n);
     });
     var gnames = Object.keys(groups).sort(function (a, b) {
       return (a === '기타') - (b === '기타') || groups[b].length - groups[a].length || a.localeCompare(b, 'ko');
     });
-    var sh = { name: '발주서', cells: {}, merges: [], widths: { 1: 2 }, heights: {} };
+    var sh = { name: sheetName || '발주서', cells: {}, merges: [], widths: { 1: 2 }, heights: {} };
     var put = function (r, c, x) { (sh.cells[r] = sh.cells[r] || {})[c] = x; };
-    var HEADS = ['현장명', '품목', '링크', '수량', '수취인 정보'], W = [16, 26, 12, 8, 16];
+    var HEADS = ['현장명', '품목', '링크', '수량', '수취인 정보'], W = [18, 26, 12, 8, 24];
     gnames.forEach(function (g, gi) {
       var c0 = 2 + gi * 6; // B, H, N, T, …
       put(2, c0, { st: 9, s: g });
@@ -1431,11 +1513,13 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           r++;
         });
         put(r0, c0, { st: 6, s: site });
-        put(r0, c0 + 4, { st: 6, s: who ? who.name + (who.tel ? '\n' + who.tel : '') : '' });
+        put(r0, c0 + 4, { st: 6, s: who ? [who.name, who.tel, who.addr].filter(Boolean).join('\n') : '' });
+        var lines = who ? [who.name, who.tel, who.addr].filter(Boolean).length : 1;
         if (r - r0 > 1) {
           sh.merges.push(colName(c0 - 1) + r0 + ':' + colName(c0 - 1) + (r - 1));
           sh.merges.push(colName(c0 + 3) + r0 + ':' + colName(c0 + 3) + (r - 1));
-        } else if (who && who.tel) sh.heights[r0] = 32;
+          if (lines > r - r0) sh.heights[r0] = 16 * lines;
+        } else if (lines > 1) sh.heights[r0] = 16 * lines;
       });
     });
     return sh;
@@ -1544,7 +1628,10 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           var label = opt.period === 'this' ? (d.getMonth() + 1) + '월' : opt.period === 'last' ? (new Date(d.getFullYear(), d.getMonth() - 1, 1).getMonth() + 1) + '월' :
             opt.period === 'custom' ? opt.from + '~' + opt.to : '전체';
           var name = ['청소용품', label, opt.site, opt.status, ymd(d)].filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g, '') + '.xlsx';
-          saveFile(buildXlsx(rows), name).then(function () { toast('엑셀 파일을 만들었어요'); });
+          var r0 = periodRange(opt.period, opt.from, opt.to);
+          var m0 = new Date(r0[0]), m1 = new Date(r0[1] - 1);
+          var oneMonth = isFinite(r0[1]) && r0[0] > 0 && m0.getFullYear() === m1.getFullYear() && m0.getMonth() === m1.getMonth();
+          saveFile(buildXlsx(rows, oneMonth ? (m0.getMonth() + 1) + '월' : '발주서'), name).then(function () { toast('엑셀 파일을 만들었어요'); });
         };
         // 오래된 입고완료까지 포함한 전체 목록을 따로 받아 온다
         call({ action: 'list', all: 1 }).then(function (r) {
@@ -1697,7 +1784,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     $('setupView').hidden = true;
     $('addForm').hidden = false; $('listView').hidden = false; $('menuBtn').hidden = false; $('xlsxBtn').hidden = false;
     $('fSite').value = load('site', '');
-    $('fRcv').value = load('rcv', ''); $('fTel').value = load('tel', '');
+    $('fRcv').value = load('rcv', ''); $('fTel').value = load('tel', ''); $('fAddr').value = load('addr', '');
     renderUnits(); render();
     refresh(false);
     askName(false);
@@ -1728,7 +1815,9 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   $('fRcv').addEventListener('input', function () { showSugg('rcv'); });
   $('fRcv').addEventListener('focus', function () { showSugg('rcv'); });
   $('fTel').addEventListener('blur', function () { this.value = phoneFmt(this.value); });
-  ['name', 'site', 'rcv'].forEach(function (kind) {
+  $('fAddr').addEventListener('input', function () { showSugg('addr'); });
+  $('fAddr').addEventListener('focus', function () { showSugg('addr'); });
+  ['name', 'site', 'rcv', 'addr'].forEach(function (kind) {
     var input = $(SUGG[kind][0]), box = $(SUGG[kind][1]);
     // 목록을 누르는 순간 입력 칸이 blur 되며 목록이 사라지지 않게 pointerdown 에서 막는다
     box.addEventListener('pointerdown', function (e) { e.preventDefault(); });

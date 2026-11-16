@@ -29,6 +29,11 @@ class Sheet {
     }
     return 0;
   }
+  getLastColumn() {
+    let m = 0;
+    this.cells.forEach((row) => { if (row) row.forEach((x, c) => { if (x && (x.v !== '' || x.f)) m = Math.max(m, c); }); });
+    return m;
+  }
   getRange(r, c, nr, nc) {
     if (typeof r === 'string') { const q = a1(r); return new Range(this, q.r0, q.c0, q.r1 - q.r0 + 1, q.c1 - q.c0 + 1); }
     return new Range(this, r, c, nr || 1, nc || 1);
@@ -73,7 +78,8 @@ function makeEnv(opts) {
   opts = opts || {};
   const sheets = {};
   const props = {};
-  const log = { created: 0, triggers: [], fetched: 0 };
+  const log = { created: 0, triggers: [], fetched: 0, urls: [] };
+  const env = {};
   const ss = {
     getSheetByName: (n) => sheets[n] || null,
     insertSheet: (n) => (sheets[n] = new Sheet(n)),
@@ -94,7 +100,14 @@ function makeEnv(opts) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
     ScriptApp: { newTrigger: (fn) => { log.triggers.push(fn); return noop(); } },
     CacheService: { getScriptCache: () => { const m = {}; return { get: (k) => m[k] || null, put: (k, v) => { m[k] = v; } }; } },
-    UrlFetchApp: { fetch: () => { log.fetched++; return { getContentText: () => '<html>원격 화면</html>' }; } },
+    // env.fetch = (url, opt) => ({code, html, headers}) 로 응답을 바꿀 수 있다
+    UrlFetchApp: {
+      fetch: (url, opt) => {
+        log.fetched++; log.urls.push(url);
+        const r = (env.fetch && env.fetch(url, opt)) || { code: 200, html: '<html>원격 화면</html>' };
+        return { getContentText: () => r.html || '', getResponseCode: () => r.code, getHeaders: () => r.headers || {} };
+      },
+    },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: { getUuid: () => crypto.randomUUID(), base64EncodeWebSafe: (s) => Buffer.from(s).toString('base64url'), Charset: {} },
     ContentService: {
@@ -113,7 +126,7 @@ function makeEnv(opts) {
   vm.createContext(ctx);
   const file = process.env.CODE_FILE || 'Code.gs'; // CODE_FILE=Code.paste.gs 로 붙여넣기용도 검사
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), ctx, { filename: file });
-  return { ctx, ss, sheets, props, log };
+  return Object.assign(env, { ctx, ss, sheets, props, log });
 }
 
 module.exports = { makeEnv };
