@@ -26,10 +26,14 @@ const CFG = {
   KEEP_DONE_DAYS: 90,   // 입고완료는 이 일수 지난 것은 앱 목록에서 뺀다 (시트에는 남음)
 };
 
-const HEAD = ['등록일시', '현장', '품명', '쿠팡', '수량', '등록자', '상태', '메모', 'ID'];
-const COL = { TIME: 1, SITE: 2, NAME: 3, LINK: 4, QTY: 5, BY: 6, STATUS: 7, MEMO: 8, ID: 9 };
+// 2026-11-16 수취인·연락처 두 열을 수량 뒤에 끼웠다 (옛 9열 시트는 migrate_ 가 자동으로 바꾼다)
+const HEAD = ['등록일시', '현장', '품명', '쿠팡', '수량', '수취인', '연락처', '등록자', '상태', '메모', 'ID'];
+const COL = { TIME: 1, SITE: 2, NAME: 3, LINK: 4, QTY: 5, RCV: 6, TEL: 7, BY: 8, STATUS: 9, MEMO: 10, ID: 11 };
+// 현장별 수취인 목록 (개인정보라 이 시트에만 둔다 — 공개 저장소에는 넣지 않는다)
+const CONTACT_SHEET = '수취인';
+const CONTACT_HEAD = ['현장', '이름', '전화번호'];
 const STATUSES = ['요청', '주문완료', '입고완료'];
-const LIMIT = { name: 80, site: 40, qty: 20, by: 20, memo: 300, link: 500 };
+const LIMIT = { name: 80, site: 40, qty: 20, by: 20, memo: 300, link: 500, rcv: 20, tel: 20 };
 
 const COLOR = {
   head: '#1f2937', headInk: '#ffffff', line: '#e5e7eb',
@@ -95,7 +99,11 @@ function handle_(req) {
 
     switch (req.action) {
       case 'info': return { ok: true, sheetUrl: ss_().getUrl() };
-      case 'list': return listItems_(String(req.all || '') === '1');
+      case 'list': {
+        const r = listItems_(String(req.all || '') === '1');
+        if (String(req.contacts || '') === '1') r.contacts = readContacts_();
+        return r;
+      }
       case 'add': return withLock_(() => addItem_(req));
       case 'update': return withLock_(() => updateItem_(req));
       case 'remove': return withLock_(() => removeItem_(req));
@@ -168,7 +176,56 @@ function sheet_() {
     sh = ss.insertSheet(CFG.SHEET);
     formatSheet_(sh);
   }
+  migrate_(sh);
   return sh;
+}
+
+/** 옛 9열(…수량|등록자|상태|메모|ID) 시트면 수량 뒤에 수취인·연락처 두 열을 끼운다. 한 번만 일어난다. */
+function migrate_(sh) {
+  const h = sh.getRange(1, 5, 1, 2).getValues()[0];
+  if (String(h[0]) === '수량' && String(h[1]) === '등록자') {
+    sh.insertColumnsAfter(COL.QTY, 2);
+    formatSheet_(sh);
+  }
+}
+
+// ── 수취인 목록 ────────────────────────────────────────────────
+function contactSheet_() {
+  const ss = ss_();
+  let sh = ss.getSheetByName(CONTACT_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(CONTACT_SHEET);
+    sh.getRange(1, 1, 1, 3).setValues([CONTACT_HEAD])
+      .setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk).setHorizontalAlignment('center');
+    sh.setFrozenRows(1);
+    [160, 100, 140].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+    sh.getRange('C2:C').setNumberFormat('@');
+  }
+  return sh;
+}
+
+function readContacts_() {
+  const sh = contactSheet_();
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, 3).getValues()
+    .map((v) => ({ site: String(v[0]).trim(), name: String(v[1]).trim(), tel: normalizePhone(v[2]) }))
+    .filter((c) => c.name);
+}
+
+/** 등록할 때 쓴 수취인을 목록에 더한다 (같은 현장·이름이면 전화번호만 고침) */
+function upsertContact_(site, name, tel) {
+  if (!name) return;
+  const sh = contactSheet_();
+  const last = sh.getLastRow();
+  const rows = last >= 2 ? sh.getRange(2, 1, last - 1, 3).getValues() : [];
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === site && String(rows[i][1]).trim() === name) {
+      if (tel && normalizePhone(rows[i][2]) !== tel) sh.getRange(i + 2, 3).setValue(safeText(tel));
+      return;
+    }
+  }
+  sh.getRange(last + 1, 1, 1, 3).setValues([[safeText(site), safeText(name), safeText(tel)]]);
 }
 
 /** 데이터 행 전부 → [{row, values, linkFormula}] */
@@ -225,8 +282,10 @@ function addItem_(req) {
   const row = sh.getLastRow() + 1;
   const now = new Date();
   sh.getRange(row, 1, 1, HEAD.length).setValues([[
-    now, safeText(it.site), safeText(it.name), '', safeText(it.qty), safeText(it.by), '요청', safeText(it.memo), id,
+    now, safeText(it.site), safeText(it.name), '', safeText(it.qty), safeText(it.rcv), safeText(it.tel),
+    safeText(it.by), '요청', safeText(it.memo), id,
   ]]);
+  if (it.rcv) upsertContact_(it.site, it.rcv, it.tel);
   sh.getRange(row, COL.LINK).setFormula(linkFormula(it.link || coupangSearchUrl(it.name), it.link ? linkLabel(it.link) : '쿠팡에서 찾기'));
   return { ok: true, id, row };
 }
@@ -246,6 +305,13 @@ function updateItem_(req) {
   if (f.qty !== undefined) sh.getRange(r.row, COL.QTY).setValue(safeText(it.qty));
   if (f.memo !== undefined) sh.getRange(r.row, COL.MEMO).setValue(safeText(it.memo));
   if (f.site !== undefined) sh.getRange(r.row, COL.SITE).setValue(safeText(it.site));
+  if (f.rcv !== undefined) sh.getRange(r.row, COL.RCV).setValue(safeText(it.rcv));
+  if (f.tel !== undefined) sh.getRange(r.row, COL.TEL).setValue(safeText(it.tel));
+  if ((f.rcv !== undefined || f.tel !== undefined) && it.rcv) {
+    const site = f.site !== undefined ? it.site : String(r.values[COL.SITE - 1]).trim();
+    const tel = f.tel !== undefined ? it.tel : normalizePhone(r.values[COL.TEL - 1]);
+    upsertContact_(site, it.rcv, tel);
+  }
   if (f.name !== undefined) {
     if (!it.name) return { ok: false, error: '품명을 적어주세요' };
     sh.getRange(r.row, COL.NAME).setValue(safeText(it.name));
@@ -394,20 +460,22 @@ function formatSheet_(sh) {
     .setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk)
     .setHorizontalAlignment('center');
   sh.setFrozenRows(1);
-  const widths = [130, 120, 200, 110, 70, 80, 80, 220, 90];
+  const widths = [130, 120, 200, 110, 70, 80, 120, 80, 80, 220, 90];
   widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
   sh.getRange('A2:A').setNumberFormat('yyyy-mm-dd hh:mm');
-  sh.getRange('E2:G').setHorizontalAlignment('center');
+  sh.getRange('G2:G').setNumberFormat('@'); // 연락처: 맨 앞 0 이 잘리지 않게 글자로
+  sh.getRange('E2:E').setHorizontalAlignment('center');
+  sh.getRange('H2:I').setHorizontalAlignment('center');
   sh.hideColumns(COL.ID);
 
   // 상태 드롭다운 — 목록 밖 값은 경고만 (입력 거부 X)
-  sh.getRange('G2:G').setDataValidation(
+  sh.getRange('I2:I').setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(STATUSES, true).setAllowInvalid(true).build());
 
-  const data = sh.getRange('A2:I');
-  const st = sh.getRange('G2:G');
+  const data = sh.getRange('A2:K');
+  const st = sh.getRange('I2:I');
   sh.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$G2="입고완료"')
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$I2="입고완료"')
       .setFontColor(COLOR.doneInk).setBackground(COLOR.done).setRanges([data]).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('요청')
       .setBackground(COLOR.req).setFontColor(COLOR.reqInk).setBold(true).setRanges([st]).build(),
@@ -474,6 +542,8 @@ function cleanInput(src, requireName) {
     qty: clip_(src.qty, LIMIT.qty),
     by: clip_(src.by, LIMIT.by),
     memo: clip_(src.memo, LIMIT.memo),
+    rcv: clip_(src.rcv, LIMIT.rcv),
+    tel: normalizePhone(clip_(src.tel, LIMIT.tel)),
     link: '',
   };
   if (requireName && !out.name) return { error: '품명을 적어주세요' };
@@ -503,9 +573,23 @@ function rowToItem(v, linkFormulaText, id) {
     by: String(v[COL.BY - 1]).trim(),
     status: normalizeStatus(v[COL.STATUS - 1]) || String(v[COL.STATUS - 1]).trim(),
     memo: String(v[COL.MEMO - 1]).trim(),
+    rcv: String(v[COL.RCV - 1]).trim(),
+    tel: normalizePhone(v[COL.TEL - 1]),
   };
 }
 
+/** 전화번호를 010-1234-5678 꼴로. 시트가 숫자로 바꾸며 맨 앞 0 을 잘랐어도(1012345678) 되살린다. 모르는 꼴은 그대로. */
+function normalizePhone(s) {
+  const raw = String(s == null ? '' : s).trim();
+  let d = raw.replace(/[^0-9]/g, '');
+  if (!d) return raw;
+  if (/^1[016789]\d{7,8}$/.test(d)) d = '0' + d; // 앞 0 이 잘린 휴대폰 번호
+  if (/^01[016789]\d{7,8}$/.test(d)) return d.slice(0, 3) + '-' + d.slice(3, d.length - 4) + '-' + d.slice(-4);
+  if (/^02\d{7,8}$/.test(d)) return '02-' + d.slice(2, d.length - 4) + '-' + d.slice(-4);
+  if (/^0\d{9,10}$/.test(d)) return d.slice(0, 3) + '-' + d.slice(3, d.length - 4) + '-' + d.slice(-4);
+  return raw;
+}
+
 if (typeof module !== 'undefined') {
-  module.exports = { coupangSearchUrl, isSearchUrl, extractUrl, linkFormula, urlFromFormula, normalizeStatus, safeText, cleanInput, rowToItem };
+  module.exports = { coupangSearchUrl, isSearchUrl, extractUrl, linkFormula, urlFromFormula, normalizeStatus, safeText, cleanInput, rowToItem, normalizePhone };
 }

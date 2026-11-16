@@ -1,14 +1,11 @@
-// node test/make_icons.js — icon.svg 로 PNG 아이콘 생성
-const { chromium } = require('playwright');
-const fs = require('fs'), path = require('path');
-(async () => {
-  const b = await chromium.launch();
-  const raw = fs.readFileSync(path.join(__dirname, '..', 'icon.svg'), 'utf8');
-  for (const s of [180, 512]) {
-    const svg = s === 180 ? raw.replace(/rx="112"/, "rx=\"0\"") : raw; // 아이폰은 모서리를 직접 둥글게 깎는다
-    const p = await b.newPage({ viewport: { width: s, height: s } });
-    await p.setContent(`<style>*{margin:0}svg{display:block;width:${s}px;height:${s}px}</style>${svg}`);
-    await p.screenshot({ path: path.join(__dirname, '..', `icon-${s}.png`), omitBackground: true });
-  }
-  await b.close();
-})();
+// 앱 아이콘 만들기: icon-src.jpg(정사각형 원본) → icon-512.png · icon-180.png(아이폰) · favicon.png
+//   node test/make_icons.js   (ImageMagick convert 필요. -strip 으로 사진 정보(EXIF) 제거)
+// 2026-11-16 아이콘 = 지역장님 햄버거 요정 사진 (본인 허락 받음 — 사용자 확인)
+const { execFileSync } = require('child_process');
+const path = require('path');
+const root = path.join(__dirname, '..');
+const src = path.join(root, 'icon-src.jpg');
+for (const [name, size] of [['icon-512.png', 512], ['icon-180.png', 180], ['favicon.png', 64]]) {
+  execFileSync('convert', [src, '-strip', '-resize', `${size}x${size}`, path.join(root, name)]);
+  console.log(name, size);
+}

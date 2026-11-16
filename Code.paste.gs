@@ -8,7 +8,7 @@ TZ: 'Asia/Seoul',
 KEEP_DONE_DAYS: 90
 };
 
-const HEAD = [ '등록일시', '현장', '품명', '쿠팡', '수량', '등록자', '상태', '메모', 'ID' ];
+const HEAD = [ '등록일시', '현장', '품명', '쿠팡', '수량', '수취인', '연락처', '등록자', '상태', '메모', 'ID' ];
 
 const COL = {
 TIME: 1,
@@ -16,11 +16,17 @@ SITE: 2,
 NAME: 3,
 LINK: 4,
 QTY: 5,
-BY: 6,
-STATUS: 7,
-MEMO: 8,
-ID: 9
+RCV: 6,
+TEL: 7,
+BY: 8,
+STATUS: 9,
+MEMO: 10,
+ID: 11
 };
+
+const CONTACT_SHEET = '수취인';
+
+const CONTACT_HEAD = [ '현장', '이름', '전화번호' ];
 
 const STATUSES = [ '요청', '주문완료', '입고완료' ];
 
@@ -30,7 +36,9 @@ site: 40,
 qty: 20,
 by: 20,
 memo: 300,
-link: 500
+link: 500,
+rcv: 20,
+tel: 20
 };
 
 const COLOR = {
@@ -120,7 +128,11 @@ sheetUrl: ss_().getUrl()
 };
 
 case 'list':
-return listItems_(String(req.all || '') === '1');
+{
+const r = listItems_(String(req.all || '') === '1');
+if (String(req.contacts || '') === '1') r.contacts = readContacts_();
+return r;
+}
 
 case 'add':
 return withLock_((() => addItem_(req)));
@@ -206,7 +218,54 @@ if (!sh) {
 sh = ss.insertSheet(CFG.SHEET);
 formatSheet_(sh);
 }
+migrate_(sh);
 return sh;
+}
+
+function migrate_(sh) {
+const h = sh.getRange(1, 5, 1, 2).getValues()[0];
+if (String(h[0]) === '수량' && String(h[1]) === '등록자') {
+sh.insertColumnsAfter(COL.QTY, 2);
+formatSheet_(sh);
+}
+}
+
+function contactSheet_() {
+const ss = ss_();
+let sh = ss.getSheetByName(CONTACT_SHEET);
+if (!sh) {
+sh = ss.insertSheet(CONTACT_SHEET);
+sh.getRange(1, 1, 1, 3).setValues([ CONTACT_HEAD ]).setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk).setHorizontalAlignment('center');
+sh.setFrozenRows(1);
+[ 160, 100, 140 ].forEach(((w, i) => sh.setColumnWidth(i + 1, w)));
+sh.getRange('C2:C').setNumberFormat('@');
+}
+return sh;
+}
+
+function readContacts_() {
+const sh = contactSheet_();
+const last = sh.getLastRow();
+if (last < 2) return [];
+return sh.getRange(2, 1, last - 1, 3).getValues().map((v => ({
+site: String(v[0]).trim(),
+name: String(v[1]).trim(),
+tel: normalizePhone(v[2])
+}))).filter((c => c.name));
+}
+
+function upsertContact_(site, name, tel) {
+if (!name) return;
+const sh = contactSheet_();
+const last = sh.getLastRow();
+const rows = last >= 2 ? sh.getRange(2, 1, last - 1, 3).getValues() : [];
+for (let i = 0; i < rows.length; i++) {
+if (String(rows[i][0]).trim() === site && String(rows[i][1]).trim() === name) {
+if (tel && normalizePhone(rows[i][2]) !== tel) sh.getRange(i + 2, 3).setValue(safeText(tel));
+return;
+}
+}
+sh.getRange(last + 1, 1, 1, 3).setValues([ [ safeText(site), safeText(name), safeText(tel) ] ]);
 }
 
 function readRows_(sh) {
@@ -279,7 +338,8 @@ dup: true
 const id = req.cid && /^[A-Za-z0-9_-]{6,40}$/.test(String(req.cid)) ? String(req.cid) : newId_();
 const row = sh.getLastRow() + 1;
 const now = new Date;
-sh.getRange(row, 1, 1, HEAD.length).setValues([ [ now, safeText(it.site), safeText(it.name), '', safeText(it.qty), safeText(it.by), '요청', safeText(it.memo), id ] ]);
+sh.getRange(row, 1, 1, HEAD.length).setValues([ [ now, safeText(it.site), safeText(it.name), '', safeText(it.qty), safeText(it.rcv), safeText(it.tel), safeText(it.by), '요청', safeText(it.memo), id ] ]);
+if (it.rcv) upsertContact_(it.site, it.rcv, it.tel);
 sh.getRange(row, COL.LINK).setFormula(linkFormula(it.link || coupangSearchUrl(it.name), it.link ? linkLabel(it.link) : '쿠팡에서 찾기'));
 return {
 ok: true,
@@ -313,6 +373,13 @@ error: it.error
 if (f.qty !== undefined) sh.getRange(r.row, COL.QTY).setValue(safeText(it.qty));
 if (f.memo !== undefined) sh.getRange(r.row, COL.MEMO).setValue(safeText(it.memo));
 if (f.site !== undefined) sh.getRange(r.row, COL.SITE).setValue(safeText(it.site));
+if (f.rcv !== undefined) sh.getRange(r.row, COL.RCV).setValue(safeText(it.rcv));
+if (f.tel !== undefined) sh.getRange(r.row, COL.TEL).setValue(safeText(it.tel));
+if ((f.rcv !== undefined || f.tel !== undefined) && it.rcv) {
+const site = f.site !== undefined ? it.site : String(r.values[COL.SITE - 1]).trim();
+const tel = f.tel !== undefined ? it.tel : normalizePhone(r.values[COL.TEL - 1]);
+upsertContact_(site, it.rcv, tel);
+}
 if (f.name !== undefined) {
 if (!it.name) return {
 ok: false,
@@ -457,15 +524,17 @@ ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(CF
 function formatSheet_(sh) {
 sh.getRange(1, 1, 1, HEAD.length).setValues([ HEAD ]).setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk).setHorizontalAlignment('center');
 sh.setFrozenRows(1);
-const widths = [ 130, 120, 200, 110, 70, 80, 80, 220, 90 ];
+const widths = [ 130, 120, 200, 110, 70, 80, 120, 80, 80, 220, 90 ];
 widths.forEach(((w, i) => sh.setColumnWidth(i + 1, w)));
 sh.getRange('A2:A').setNumberFormat('yyyy-mm-dd hh:mm');
-sh.getRange('E2:G').setHorizontalAlignment('center');
+sh.getRange('G2:G').setNumberFormat('@');
+sh.getRange('E2:E').setHorizontalAlignment('center');
+sh.getRange('H2:I').setHorizontalAlignment('center');
 sh.hideColumns(COL.ID);
-sh.getRange('G2:G').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(STATUSES, true).setAllowInvalid(true).build());
-const data = sh.getRange('A2:I');
-const st = sh.getRange('G2:G');
-sh.setConditionalFormatRules([ SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$G2="입고완료"').setFontColor(COLOR.doneInk).setBackground(COLOR.done).setRanges([ data ]).build(), SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('요청').setBackground(COLOR.req).setFontColor(COLOR.reqInk).setBold(true).setRanges([ st ]).build(), SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('주문완료').setBackground(COLOR.ord).setFontColor(COLOR.ordInk).setBold(true).setRanges([ st ]).build() ]);
+sh.getRange('I2:I').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(STATUSES, true).setAllowInvalid(true).build());
+const data = sh.getRange('A2:K');
+const st = sh.getRange('I2:I');
+sh.setConditionalFormatRules([ SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$I2="입고완료"').setFontColor(COLOR.doneInk).setBackground(COLOR.done).setRanges([ data ]).build(), SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('요청').setBackground(COLOR.req).setFontColor(COLOR.reqInk).setBold(true).setRanges([ st ]).build(), SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('주문완료').setBackground(COLOR.ord).setFontColor(COLOR.ordInk).setBold(true).setRanges([ st ]).build() ]);
 }
 
 function coupangSearchUrl(name) {
@@ -519,6 +588,8 @@ site: clip_(src.site, LIMIT.site),
 qty: clip_(src.qty, LIMIT.qty),
 by: clip_(src.by, LIMIT.by),
 memo: clip_(src.memo, LIMIT.memo),
+rcv: clip_(src.rcv, LIMIT.rcv),
+tel: normalizePhone(clip_(src.tel, LIMIT.tel)),
 link: ''
 };
 if (requireName && !out.name) return {
@@ -551,8 +622,21 @@ custom: custom,
 qty: String(v[COL.QTY - 1]).trim(),
 by: String(v[COL.BY - 1]).trim(),
 status: normalizeStatus(v[COL.STATUS - 1]) || String(v[COL.STATUS - 1]).trim(),
-memo: String(v[COL.MEMO - 1]).trim()
+memo: String(v[COL.MEMO - 1]).trim(),
+rcv: String(v[COL.RCV - 1]).trim(),
+tel: normalizePhone(v[COL.TEL - 1])
 };
+}
+
+function normalizePhone(s) {
+const raw = String(s == null ? '' : s).trim();
+let d = raw.replace(/[^0-9]/g, '');
+if (!d) return raw;
+if (/^1[016789]\d{7,8}$/.test(d)) d = '0' + d;
+if (/^01[016789]\d{7,8}$/.test(d)) return d.slice(0, 3) + '-' + d.slice(3, d.length - 4) + '-' + d.slice(-4);
+if (/^02\d{7,8}$/.test(d)) return '02-' + d.slice(2, d.length - 4) + '-' + d.slice(-4);
+if (/^0\d{9,10}$/.test(d)) return d.slice(0, 3) + '-' + d.slice(3, d.length - 4) + '-' + d.slice(-4);
+return raw;
 }
 
 if (typeof module !== 'undefined') {
@@ -565,6 +649,7 @@ urlFromFormula: urlFromFormula,
 normalizeStatus: normalizeStatus,
 safeText: safeText,
 cleanInput: cleanInput,
-rowToItem: rowToItem
+rowToItem: rowToItem,
+normalizePhone: normalizePhone
 };
 }

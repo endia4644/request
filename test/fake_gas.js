@@ -34,6 +34,7 @@ class Sheet {
     return new Range(this, r, c, nr || 1, nc || 1);
   }
   deleteRow(r) { this.cells.splice(r, 1); }
+  insertColumnsAfter(c, n) { this.cells.forEach((row) => { if (row) row.splice(c + 1, 0, ...Array.from({ length: n }, () => ({ v: '', f: '' }))); }); }
   setFrozenRows() {} setColumnWidth() {} hideColumns() {} setConditionalFormatRules() {}
 }
 

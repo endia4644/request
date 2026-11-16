@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="청소용품">
 <title>청소용품 요청</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <style>
 :root {
@@ -167,7 +167,25 @@ textarea.field { height: 72px; padding: 12px 14px; resize: none; }
 .rsite .ri i.입고완료::before { background: var(--done); }
 .rsite .ri em { font-style: normal; font-size: 12px; color: var(--sub); align-self: center; }
 .rmore { width: 100%; height: 40px; font-size: 14px; font-weight: 600; color: var(--accent); }
-.viewsw { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--line); border-radius: 12px; padding: 4px; margin: 22px 0 0; }
+.scard { padding: 14px 14px 6px; margin-top: 10px; }
+.scard .sh { display: flex; align-items: baseline; gap: 8px; }
+.scard .sh b { flex: 1; font-size: 17px; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.scard .sh span { font-size: 13px; color: var(--sub); font-weight: 600; white-space: nowrap; }
+.scard .who { font-size: 13px; color: var(--sub); margin-top: 3px; }
+.scard .who a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.scard .lines { margin-top: 8px; border-top: 1px solid var(--line); }
+.sline { display: grid; grid-template-columns: 44px 1fr auto 10px; gap: 8px; align-items: center; width: 100%; text-align: left; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+.sline:last-child { border-bottom: 0; }
+.sline .d { font-size: 12px; color: var(--sub); }
+.sline .n { overflow-wrap: anywhere; }
+.sline .q { font-weight: 700; font-size: 14px; white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--req); display: inline-block; }
+.dot.주문완료 { background: var(--ord); }
+.dot.입고완료 { background: var(--done); }
+.legend { display: flex; gap: 12px; font-size: 12px; color: var(--sub); margin: 10px 2px 0; align-items: center; }
+.legend .dot { margin-right: 4px; }
+.periods { margin-top: 12px; }
+.viewsw { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; background: var(--line); border-radius: 12px; padding: 4px; margin: 22px 0 0; }
 .viewsw button { height: 38px; border-radius: 9px; font-size: 14px; font-weight: 700; color: var(--sub); }
 .viewsw button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
 .dhead { list-style: none; display: flex; align-items: baseline; gap: 8px; font-size: 14px; font-weight: 800; color: var(--ink); margin: 10px 2px -2px; scroll-margin-top: 70px; }
@@ -390,6 +408,20 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       </div>
     </div>
 
+    <div class="row" style="display:grid;grid-template-columns:1fr 1.2fr;gap:8px">
+      <div>
+        <label class="lbl" for="fRcv">수취인</label>
+        <div class="sugg">
+          <input class="field" id="fRcv" placeholder="이름" maxlength="20" autocomplete="off" autocorrect="off" spellcheck="false">
+          <div class="sugglist" id="fRcvList" hidden style="width:calc(200% + 8px)"></div>
+        </div>
+      </div>
+      <div>
+        <label class="lbl" for="fTel">연락처</label>
+        <input class="field" id="fTel" placeholder="010-0000-0000" inputmode="tel" maxlength="20" autocomplete="off">
+      </div>
+    </div>
+
     <div class="row">
       <label class="lbl" for="fLink">쿠팡 상품 링크 (선택)</label>
       <div class="linkrow">
@@ -418,11 +450,12 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   </form>
 
   <section id="listView" hidden>
-    <div class="card recent" id="recentBox" hidden></div>
     <div class="viewsw" id="viewSw">
-      <button type="button" data-view="list">날짜별 목록</button>
+      <button type="button" data-view="site">현장별</button>
+      <button type="button" data-view="list">날짜별</button>
       <button type="button" data-view="month">월별 합계</button>
     </div>
+    <div id="siteView" hidden></div>
     <div id="monthView" hidden></div>
     <div id="listBox">
     <div class="listhead">
@@ -463,7 +496,9 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   var me = load('me', '');
   var state = {
     items: [], loaded: false, tab: load('tab', '요청'), site: load('siteFilter', ''),
-    view: load('view', 'list'), month: '', // month: 'YYYY-MM' (월별 합계에서 보는 달)
+    view: load('view', 'site'), month: '', // month: 'YYYY-MM' (월별 합계에서 보는 달)
+    period: load('period', 'month'), // 현장별 보기 기간: week | month | last | all
+    contacts: [], contactsAt: 0, // 수취인 목록 (시트 '수취인' 탭) — 5분마다 다시 받음
     unit: load('unit', '개'), writes: 0, gen: 0, lastOk: 0, prevIds: null, err: '',
   };
 
@@ -482,7 +517,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       });
     }
     var p = req.action === 'list'
-      ? fetch(cfg.u + '?action=list&k=' + encodeURIComponent(cfg.k) + (req.all ? '&all=1' : '') + '&_=' + Date.now(), { cache: 'no-store' })
+      ? fetch(cfg.u + '?action=list&k=' + encodeURIComponent(cfg.k) + (req.all ? '&all=1' : '') + (req.contacts ? '&contacts=1' : '') + '&_=' + Date.now(), { cache: 'no-store' })
       // text/plain 이라 브라우저가 사전 확인(CORS preflight)을 하지 않는다
       : fetch(cfg.u, { method: 'POST', body: JSON.stringify(req) });
     return p.then(function (r) {
@@ -510,8 +545,11 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     polling = true;
     var gen = state.gen;
     if (!quiet) setSync('busy', '불러오는 중');
-    return call({ action: 'list', all: state.view === 'month' ? 1 : 0 }).then(function (r) {
+    var needContacts = Date.now() - state.contactsAt > 5 * 60000;
+    var needAll = state.view === 'month' || (state.view === 'site' && state.period === 'all');
+    return call({ action: 'list', all: needAll ? 1 : 0, contacts: needContacts ? 1 : 0 }).then(function (r) {
       if (!r.ok) throw r;
+      if (r.contacts) { state.contacts = r.contacts; state.contactsAt = Date.now(); }
       state.err = '';
       state.lastOk = Date.now();
       if (state.writes === 0 && gen === state.gen) apply(r.items || []);
@@ -571,6 +609,13 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     }
     return out;
   }
+  function phoneFmt(s) {
+    var raw = String(s || '').trim(), d = raw.replace(/[^0-9]/g, '');
+    if (/^01[016789]\d{7,8}$/.test(d)) return d.slice(0, 3) + '-' + d.slice(3, d.length - 4) + '-' + d.slice(-4);
+    if (/^02\d{7,8}$/.test(d)) return '02-' + d.slice(2, d.length - 4) + '-' + d.slice(-4);
+    if (/^0\d{9,10}$/.test(d)) return d.slice(0, 3) + '-' + d.slice(3, d.length - 4) + '-' + d.slice(-4);
+    return raw;
+  }
   function norm(s) { return String(s || '').replace(/\s+/g, '').toLowerCase(); }
 
   // 품명 후보: 시트 기록(최근·자주 쓴 것) + 품목 목록. 기록의 상품 링크·단위가 목록보다 우선.
@@ -589,6 +634,29 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     });
     return Object.keys(map).map(function (k) { return map[k]; });
   }
+  // 수취인 후보: 시트 '수취인' 탭 + 기록. key = 현장|이름
+  function rcvCandidates() {
+    var map = {};
+    state.contacts.forEach(function (c) {
+      map[c.site + '|' + c.name] = { name: c.name, tel: c.tel || '', site: c.site, uses: 0, last: 0 };
+    });
+    state.items.forEach(function (it) {
+      if (!it.rcv) return;
+      var k = (it.site || '') + '|' + it.rcv;
+      var c = map[k] || (map[k] = { name: it.rcv, tel: '', site: it.site || '', uses: 0, last: 0 });
+      c.uses++;
+      if ((it.t || 0) >= c.last) { c.last = it.t || 0; if (it.tel) c.tel = it.tel; }
+    });
+    return Object.keys(map).map(function (k) { return map[k]; });
+  }
+  // 현장을 고르면 그 현장의 수취인을 채운다 (최근에 쓴 사람 → 목록에 한 명뿐이면 그 사람)
+  function autofillRcv() {
+    var site = $('fSite').value.trim();
+    if (!site || $('fRcv').value.trim()) return;
+    var cands = rcvCandidates().filter(function (c) { return c.site === site; })
+      .sort(function (a, b) { return b.last - a.last || b.uses - a.uses; });
+    if (cands.length && (cands[0].uses > 0 || cands.length === 1)) { $('fRcv').value = cands[0].name; $('fTel').value = cands[0].tel; }
+  }
   function siteCandidates() {
     var map = {};
     state.items.forEach(function (it) {
@@ -596,6 +664,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       var c = map[it.site] || (map[it.site] = { name: it.site, uses: 0, last: 0 });
       c.uses++; c.last = Math.max(c.last, it.t || 0);
     });
+    // 수취인 목록에만 있는 현장도 (오션 명단 등으로 미리 채운 경우)
+    state.contacts.forEach(function (c) { if (c.site && !map[c.site]) map[c.site] = { name: c.site, uses: 0, last: 0, listed: true }; });
     return Object.keys(map).map(function (k) { return map[k]; });
   }
   function matchScore(name, q) {
@@ -612,12 +682,18 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     return esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + q.trim().length)) + '</mark>' + esc(name.slice(i + q.trim().length));
   }
   // 입력 칸 아래 제안 목록. kind: 'name' | 'site'
+  var SUGG = { name: ['fName', 'fNameList'], site: ['fSite', 'fSiteList'], rcv: ['fRcv', 'fRcvList'] };
   function showSugg(kind) {
-    var input = $(kind === 'name' ? 'fName' : 'fSite'), box = $(kind === 'name' ? 'fNameList' : 'fSiteList');
+    var input = $(SUGG[kind][0]), box = $(SUGG[kind][1]);
     var q = input.value;
-    var list = (kind === 'name' ? nameCandidates() : siteCandidates());
+    var list = kind === 'name' ? nameCandidates() : kind === 'site' ? siteCandidates() : rcvCandidates();
     var scored;
-    if (!q.trim()) {
+    if (kind === 'rcv') {
+      // 지금 고른 현장 사람을 먼저
+      var site = $('fSite').value.trim();
+      scored = list.filter(function (c) { return !q.trim() ? (site ? c.site === site : c.uses > 0) : matchScore(c.name, q) > 0; })
+        .sort(function (a, b) { return (b.site === site) - (a.site === site) || b.last - a.last || b.uses - a.uses || a.name.localeCompare(b.name, 'ko'); });
+    } else if (!q.trim()) {
       // 비어 있으면: 품명은 최근에 쓴 것, 현장은 자주 쓰는 곳
       scored = list.filter(function (c) { return c.uses > 0; })
         .sort(function (a, b) { return kind === 'site' ? b.uses - a.uses : b.last - a.last; });
@@ -630,6 +706,10 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     scored = scored.slice(0, 8);
     if (!scored.length) { box.hidden = true; return; }
     box.innerHTML = scored.map(function (c, i) {
+      if (kind === 'rcv') {
+        return '<button type="button" data-i="' + i + '"><span class="sn">' + highlight(c.name, q) +
+          (c.site ? ' <span class="su">' + esc(c.site) + '</span>' : '') + '</span><span class="su">' + esc(c.tel || '') + '</span></button>';
+      }
       return '<button type="button" data-i="' + i + '"><span class="sn">' + highlight(c.name, q) + '</span>' +
         (c.unit ? '<span class="su">' + esc(c.unit) + '</span>' : '') +
         (c.link ? '<span class="st">쿠팡 링크</span>' : '') +
@@ -638,46 +718,71 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     box._items = scored;
     box.hidden = false;
   }
-  function hideSugg(kind) { $(kind === 'name' ? 'fNameList' : 'fSiteList').hidden = true; }
+  function hideSugg(kind) { $(SUGG[kind][1]).hidden = true; }
   function pickSugg(kind, c) {
     if (kind === 'name') {
       $('fName').value = c.name;
       if (c.link && !extractUrl($('fLink').value)) $('fLink').value = c.link;
       if (c.unit && UNITS.indexOf(c.unit) >= 0) { state.unit = c.unit; renderUnits(); }
       updatePreview();
-    } else {
+    } else if (kind === 'site') {
+      var changed = $('fSite').value.trim() !== c.name;
       $('fSite').value = c.name;
+      if (changed) { $('fRcv').value = ''; $('fTel').value = ''; }
+      autofillRcv();
+    } else {
+      $('fRcv').value = c.name;
+      $('fTel').value = c.tel || '';
     }
     hideSugg(kind);
   }
 
-  // ── 현장별 최근 발주 (첫 화면 맨 위) ─────────────────────────
-  var recentOpen = false;
-  function renderRecent() {
-    var box = $('recentBox');
-    var since = Date.now() - 30 * 864e5;
+  // ── 현장별 보기 (첫 화면): 어느 현장에 어떤 물건이 들어갔는지 ──────────
+  var PERIODS = [['week', '최근 7일'], ['month', '이번 달'], ['last', '지난 달'], ['all', '전체']];
+  function periodOk(t) {
+    var d = new Date(), y = d.getFullYear(), m = d.getMonth();
+    if (state.period === 'week') return (t || 0) >= Date.now() - 7 * 864e5;
+    if (state.period === 'month') return (t || 0) >= new Date(y, m, 1).getTime();
+    if (state.period === 'last') return (t || 0) >= new Date(y, m - 1, 1).getTime() && (t || 0) < new Date(y, m, 1).getTime();
+    return true;
+  }
+  function telLink(tel) { return tel ? '<a href="tel:' + esc(tel.replace(/[^0-9+]/g, '')) + '">' + esc(tel) + '</a>' : ''; }
+  // 현장의 수취인: 가장 최근 기록에 적힌 사람, 없으면 수취인 목록의 첫 사람
+  function siteContact(site, its) {
+    for (var i = 0; i < its.length; i++) if (its[i].rcv) return { name: its[i].rcv, tel: its[i].tel };
+    for (var j = 0; j < state.contacts.length; j++) if (state.contacts[j].site === site) return state.contacts[j];
+    return null;
+  }
+  function renderSiteView() {
+    var box = $('siteView');
     var groups = {};
     state.items.forEach(function (it) {
-      if ((it.t || 0) < since) return;
+      if (!periodOk(it.t)) return;
       var k = it.site || '';
       var g = groups[k] || (groups[k] = { site: k, last: 0, items: [] });
       g.items.push(it); g.last = Math.max(g.last, it.t || 0);
     });
     var list = Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (a, b) { return b.last - a.last; });
-    if (!state.loaded || !list.length) { box.hidden = true; return; }
-    var shown = recentOpen ? list : list.slice(0, 4);
-    box.innerHTML = '<h3>현장별 최근 발주 <small>최근 30일 · ' + list.length + '곳</small></h3>' +
-      shown.map(function (g) {
-        var its = g.items.slice().sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
-        var d = new Date(g.last);
-        return '<button type="button" class="rsite" data-site="' + esc(g.site) + '">' +
-          '<div class="rt"><b>' + esc(g.site || '현장 미지정') + '</b><span>' + (d.getMonth() + 1) + '/' + d.getDate() + ' · ' + its.length + '건</span></div>' +
-          '<div class="ri">' + its.slice(0, 4).map(function (it) {
-            return '<i class="' + esc(it.status) + '">' + esc(it.name) + (it.qty ? ' ' + esc(it.qty) : '') + '</i>';
-          }).join('') + (its.length > 4 ? '<em>외 ' + (its.length - 4) + '개</em>' : '') + '</div></button>';
-      }).join('') +
-      (list.length > 4 ? '<button type="button" class="rmore" id="recentMore">' + (recentOpen ? '접기' : '현장 ' + list.length + '곳 모두 보기') + '</button>' : '');
-    box.hidden = false;
+    var total = list.reduce(function (n, g) { return n + g.items.length; }, 0);
+    var html = '<div class="seg periods" id="perSeg" style="grid-template-columns:repeat(4,1fr)">' + PERIODS.map(function (p) {
+      return '<button type="button" data-per="' + p[0] + '" aria-pressed="' + (state.period === p[0]) + '">' + p[1] + '</button>';
+    }).join('') + '</div>' +
+      '<div class="legend"><span><i class="dot"></i>요청</span><span><i class="dot 주문완료"></i>주문함</span><span><i class="dot 입고완료"></i>받음</span>' +
+      '<span style="margin-left:auto">' + list.length + '곳 · ' + total + '건</span></div>';
+    if (!state.loaded) html += '<div class="empty">불러오는 중…</div>';
+    else if (!list.length) html += '<div class="empty">이 기간에 발주한 게 없어요</div>';
+    html += list.map(function (g) {
+      var its = g.items.slice().sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
+      var who = siteContact(g.site, its);
+      return '<div class="card scard"><div class="sh"><b>' + esc(g.site || '현장 미지정') + '</b><span>' + its.length + '건</span></div>' +
+        (who ? '<div class="who">수취인 ' + esc(who.name) + (who.tel ? ' · ' + telLink(who.tel) : '') + '</div>' : '') +
+        '<div class="lines">' + its.map(function (it) {
+          var d = new Date(it.t || 0);
+          return '<button type="button" class="sline" data-id="' + esc(it.id) + '"><span class="d">' + (d.getMonth() + 1) + '/' + d.getDate() + '</span>' +
+            '<span class="n">' + esc(it.name) + '</span><span class="q">' + esc(it.qty) + '</span><i class="dot ' + esc(it.status) + '"></i></button>';
+        }).join('') + '</div></div>';
+    }).join('');
+    box.innerHTML = html;
   }
 
   // ── 날짜·수량 도우미 ───────────────────────────────────────
@@ -726,10 +831,11 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   function recentDone(it) { return !(it.status === '입고완료' && it.t && Date.now() - it.t > 90 * 864e5); }
 
   function render() {
-    renderRecent();
     $('viewSw').querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-view') === state.view); });
     $('monthView').hidden = state.view !== 'month';
-    $('listBox').hidden = state.view === 'month';
+    $('siteView').hidden = state.view !== 'site';
+    $('listBox').hidden = state.view !== 'list';
+    if (state.view === 'site') renderSiteView();
     var all = state.items.filter(recentDone); // 월별 화면용으로 받아 온 오래된 입고완료는 목록에선 숨김
     var sites = {};
     all.forEach(function (it) { if (it.site) sites[it.site] = 1; });
@@ -840,7 +946,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     if (state.view === v) return;
     state.view = v; save('view', v);
     render();
-    if (v === 'month') refresh(true); // 오래된 입고완료까지 받아 오기
+    if (v === 'month' || (v === 'site' && state.period === 'all')) refresh(true); // 오래된 입고완료까지 받아 오기
   }
 
   var ARROW = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M7 17L17 7M9 7h8v8"/></svg>';
@@ -923,7 +1029,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
 
   function itemHtml(it) {
     var fresh = it.by !== me && it.t && Date.now() - it.t < 30 * 60000 && it.status === '요청';
-    var meta = [it.site, it.by, ago(it.t)].filter(Boolean).map(esc).join(' · ');
+    var meta = [it.site, it.by, ago(it.t)].filter(Boolean).map(esc).join(' · ') +
+      (it.rcv ? '<br>수취인 ' + esc(it.rcv) + (it.tel ? ' · ' + telLink(it.tel) : '') : '');
     var next = NEXT[it.status];
     return '<li class="card item' + (it.pending ? ' pending' : '') + (it.status === '입고완료' ? ' done' : '') + '" data-id="' + esc(it.id) + '">' +
       (fresh ? '<span class="newdot"></span>' : '') +
@@ -996,7 +1103,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   // 평소엔 품명 칸만 보이고, 누르면 나머지가 펼쳐진다 (목록이 첫 화면에 보이게)
   function expandForm(on) {
     $('addExtra').hidden = !on;
-    if (!on) { hideSugg('name'); hideSugg('site'); }
+    if (!on) { hideSugg('name'); hideSugg('site'); hideSugg('rcv'); }
     if (!on) { $('fName').value = ''; $('fLink').value = ''; $('fMemo').value = ''; $('fQty').value = '1'; updatePreview(); $('fName').blur(); }
   }
 
@@ -1008,10 +1115,11 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var link = extractUrl(rawLink);
     if (rawLink && !link) { toast('링크는 https:// 로 시작해야 해요'); $('fLink').focus(); return; }
     var site = $('fSite').value.trim();
-    var req = { action: 'add', cid: cid(), name: name, qty: qtyText(), site: site, by: me, memo: $('fMemo').value.trim(), link: link };
-    save('site', site);
+    var rcv = $('fRcv').value.trim(), tel = phoneFmt($('fTel').value);
+    var req = { action: 'add', cid: cid(), name: name, qty: qtyText(), site: site, rcv: rcv, tel: tel, by: me, memo: $('fMemo').value.trim(), link: link };
+    save('site', site); save('rcv', rcv); save('tel', tel);
 
-    var temp = { id: req.cid, t: Date.now(), site: site, name: name, qty: req.qty, by: me, memo: req.memo, status: '요청',
+    var temp = { id: req.cid, t: Date.now(), site: site, name: name, qty: req.qty, rcv: rcv, tel: tel, by: me, memo: req.memo, status: '요청',
       link: link || coupangSearch(name), custom: !!link, pending: true };
     state.items.unshift(temp);
     if (state.tab !== '요청' && state.tab !== '') state.tab = '요청';
@@ -1020,6 +1128,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var keep = { name: name, qty: $('fQty').value, link: rawLink, memo: req.memo };
     expandForm(false);
 
+    if (rcv) state.contactsAt = 0;
     write(req, '등록했어요 · 시트에 올라갔어요').catch(function () {
       state.items = state.items.filter(function (x) { return x !== temp; });
       render();
@@ -1048,6 +1157,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       '<div class="row"><label class="lbl" for="eName">품명</label><input class="field" id="eName" maxlength="80" value="' + esc(it.name) + '"></div>' +
       '<div class="row"><label class="lbl" for="eQty">수량</label><input class="field" id="eQty" maxlength="20" value="' + esc(it.qty) + '"></div>' +
       '<div class="row"><label class="lbl" for="eSite">현장</label><input class="field" id="eSite" list="dlSites" maxlength="40" value="' + esc(it.site) + '"></div>' +
+      '<div class="row" style="display:grid;grid-template-columns:1fr 1.2fr;gap:8px"><div><label class="lbl" for="eRcv">수취인</label><input class="field" id="eRcv" maxlength="20" value="' + esc(it.rcv || '') + '"></div>' +
+      '<div><label class="lbl" for="eTel">연락처</label><input class="field" id="eTel" inputmode="tel" maxlength="20" value="' + esc(it.tel || '') + '"></div></div>' +
       '<div class="row"><label class="lbl" for="eLink">쿠팡 상품 링크</label><input class="field" id="eLink" inputmode="url" placeholder="비우면 검색 링크" value="' + esc(it.custom ? it.link : '') + '"></div>' +
       '<div class="row"><label class="lbl" for="eMemo">메모</label><textarea class="field" id="eMemo" maxlength="300">' + esc(it.memo) + '</textarea></div>' +
       '<div class="btnrow"><button type="button" class="ghost danger" id="eDel">삭제</button><button type="button" class="primary" id="eSave">저장</button></div>',
@@ -1076,12 +1187,15 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           if (v('#eQty') !== it.qty) f.qty = v('#eQty');
           if (v('#eSite') !== it.site) f.site = v('#eSite');
           if (v('#eMemo') !== it.memo) f.memo = v('#eMemo');
+          if (v('#eRcv') !== (it.rcv || '')) f.rcv = v('#eRcv');
+          if (phoneFmt(v('#eTel')) !== (it.tel || '')) f.tel = phoneFmt(v('#eTel'));
           if (link !== (it.custom ? it.link : '')) f.link = link;
           closeSheet();
           if (!Object.keys(f).length) return;
           var before = JSON.parse(JSON.stringify(it));
           if (f.status) it.status = f.status;
-          ['name', 'qty', 'site', 'memo'].forEach(function (k) { if (f[k] !== undefined) it[k] = f[k]; });
+          ['name', 'qty', 'site', 'memo', 'rcv', 'tel'].forEach(function (k) { if (f[k] !== undefined) it[k] = f[k]; });
+          if (f.rcv !== undefined || f.tel !== undefined) state.contactsAt = 0;
           if (f.link !== undefined || f.name !== undefined) {
             var l = f.link !== undefined ? f.link : (it.custom ? it.link : '');
             it.custom = !!l; it.link = l || coupangSearch(it.name);
@@ -1129,13 +1243,21 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   }
 
   function xesc(s) { return String(s == null ? '' : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  function colName(i) { return String.fromCharCode(65 + i); }
+  function colName(i) { var s = ''; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; } // 0→A, 26→AA
 
   // 엑셀 파일 만들기. sheets: [{name, cols:[{h,w}], rows:[[칸]]}]
   // 칸: {s:글자} | {n:숫자} | {d:밀리초(날짜시각)} | {link, label}
   function buildWorkbook(sheets) {
     function cell(ref, x) {
       if (!x) return '';
+      if (x.st) { // 발주서 시트: 스타일 번호를 직접 지정 (테두리 등)
+        if (x.link) {
+          var q0 = function (s) { return xesc(String(s).replace(/"/g, '""')); };
+          return '<c r="' + ref + '" s="' + x.st + '" t="str"><f>HYPERLINK("' + q0(x.link) + '","' + q0(x.label) + '")</f><v>' + xesc(x.label) + '</v></c>';
+        }
+        if (x.s == null || x.s === '') return '<c r="' + ref + '" s="' + x.st + '"/>';
+        return '<c r="' + ref + '" s="' + x.st + '" t="inlineStr"><is><t xml:space="preserve">' + xesc(x.s) + '</t></is></c>';
+      }
       if (x.d) { // 엑셀 날짜 일련번호 (이 휴대폰 시간대 기준)
         // 초 단위로 반올림해야 09:05 가 09:04:59.98 → '09:04' 로 보이지 않는다
         var local = Math.round((x.d - new Date(x.d).getTimezoneOffset() * 60000) / 1000);
@@ -1149,7 +1271,28 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       if (!x.s) return '';
       return '<c r="' + ref + '" s="4" t="inlineStr"><is><t xml:space="preserve">' + xesc(x.s) + '</t></is></c>';
     }
+    // 자유 배치 시트: sh.cells = {행: {열: 칸}}, sh.merges = ['B5:B9'], sh.widths = {열: 너비}
+    function gridXml(sh) {
+      var rows = Object.keys(sh.cells).map(Number).sort(function (a, b) { return a - b; });
+      var maxC = 1;
+      var body = rows.map(function (r) {
+        var cs = Object.keys(sh.cells[r]).map(Number).sort(function (a, b) { return a - b; });
+        maxC = Math.max(maxC, cs[cs.length - 1] || 1);
+        return '<row r="' + r + '"' + (sh.heights && sh.heights[r] ? ' ht="' + sh.heights[r] + '" customHeight="1"' : '') + '>' +
+          cs.map(function (c) { return cell(colName(c - 1) + r, sh.cells[r][c]); }).join('') + '</row>';
+      }).join('');
+      var widths = Object.keys(sh.widths || {}).map(Number).sort(function (a, b) { return a - b; });
+      return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<dimension ref="A1:' + colName(maxC - 1) + (rows[rows.length - 1] || 1) + '"/>' +
+        '<sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><sheetFormatPr defaultRowHeight="18"/>' +
+        (widths.length ? '<cols>' + widths.map(function (c) { return '<col min="' + c + '" max="' + c + '" width="' + sh.widths[c] + '" customWidth="1"/>'; }).join('') + '</cols>' : '') +
+        '<sheetData>' + body + '</sheetData>' +
+        (sh.merges && sh.merges.length ? '<mergeCells count="' + sh.merges.length + '">' + sh.merges.map(function (m) { return '<mergeCell ref="' + m + '"/>'; }).join('') + '</mergeCells>' : '') +
+        '</worksheet>';
+    }
     function sheetXml(sh) {
+      if (sh.cells) return gridXml(sh);
       var last = colName(sh.cols.length - 1), n = sh.rows.length + 1;
       var rows = ['<row r="1">' + sh.cols.map(function (c, i) {
         return '<c r="' + colName(i) + '1" s="1" t="inlineStr"><is><t>' + xesc(c.h) + '</t></is></c>';
@@ -1177,15 +1320,20 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       '<font><u/><sz val="11"/><color rgb="FFE52528"/><name val="맑은 고딕"/></font></fonts>' +
       '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
       '<fill><patternFill patternType="solid"><fgColor rgb="FF1F2937"/><bgColor indexed="64"/></patternFill></fill></fills>' +
-      '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+      '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>' +
+      '<border><left style="thin"><color rgb="FF9CA3AF"/></left><right style="thin"><color rgb="FF9CA3AF"/></right><top style="thin"><color rgb="FF9CA3AF"/></top><bottom style="thin"><color rgb="FF9CA3AF"/></bottom><diagonal/></border></borders>' +
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-      '<cellXfs count="6">' +
+      '<cellXfs count="10">' +
       '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
       '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
       '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment vertical="top"/></xf>' +
       '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top"/></xf>' +
       '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' +
       '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="top"/></xf>' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' +
       '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
     var files = [
       { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
@@ -1204,6 +1352,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
         '<sheets>' + sheets.map(function (sh, i) { return '<sheet name="' + xesc(sh.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join('') + '</sheets>' +
         '<definedNames>' + sheets.map(function (sh, i) {
+          if (!sh.abs) return '';
           return '<definedName name="_xlnm._FilterDatabase" localSheetId="' + i + '" hidden="1">\'' + xesc(sh.name) + '\'!' + sh.abs + '</definedName>';
         }).join('') + '</definedNames>' +
         '</workbook>' },
@@ -1222,10 +1371,10 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   function buildXlsx(items) {
     var list = {
       name: '목록',
-      cols: [{ h: '등록일시', w: 17 }, { h: '현장', w: 22 }, { h: '품명', w: 28 }, { h: '수량', w: 9 }, { h: '상태', w: 10 },
-        { h: '등록자', w: 10 }, { h: '메모', w: 36 }, { h: '쿠팡', w: 13 }],
+      cols: [{ h: '등록일시', w: 17 }, { h: '현장', w: 22 }, { h: '품명', w: 28 }, { h: '수량', w: 9 }, { h: '수취인', w: 10 }, { h: '연락처', w: 15 },
+        { h: '상태', w: 10 }, { h: '등록자', w: 10 }, { h: '메모', w: 36 }, { h: '쿠팡', w: 13 }],
       rows: items.map(function (it) {
-        return [{ d: it.t }, { s: it.site }, { s: it.name }, { s: it.qty }, { s: it.status }, { s: it.by }, { s: it.memo },
+        return [{ d: it.t }, { s: it.site }, { s: it.name }, { s: it.qty }, { s: it.rcv }, { s: it.tel }, { s: it.status }, { s: it.by }, { s: it.memo },
           { link: it.link || coupangSearch(it.name), label: it.custom ? '쿠팡 상품' : '쿠팡에서 찾기' }];
       }),
     };
@@ -1238,7 +1387,58 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           { link: g.link || coupangSearch(g.name), label: g.link ? '쿠팡 상품' : '쿠팡에서 찾기' }];
       }),
     };
-    return buildWorkbook([list, total]);
+    return buildWorkbook([orderSheet(items), list, total]);
+  }
+
+  // 평소 쓰는 발주서 모양: 묶음이 옆으로 (B~F, H~L, N~R, …), 묶음마다 현장명|품목|링크|수량|수취인 정보.
+  // 묶음 = 현장 이름 첫 단어가 두 현장 이상 같으면 그 단어(예: '스토어 홍대'·'스토어 명동' → 스토어), 나머지는 '기타'.
+  function orderSheet(items) {
+    var bySite = {};
+    items.forEach(function (it) { var k = it.site || '현장 미지정'; (bySite[k] = bySite[k] || []).push(it); });
+    var sites = Object.keys(bySite);
+    var firstWord = function (n) { return String(n).split(/\s+/)[0]; };
+    var wordCount = {};
+    sites.forEach(function (n) { if (/\s/.test(n)) wordCount[firstWord(n)] = (wordCount[firstWord(n)] || 0) + 1; });
+    var groups = {};
+    sites.forEach(function (n) {
+      var g = /\s/.test(n) && wordCount[firstWord(n)] >= 2 ? firstWord(n) : '기타';
+      (groups[g] = groups[g] || []).push(n);
+    });
+    var gnames = Object.keys(groups).sort(function (a, b) {
+      return (a === '기타') - (b === '기타') || groups[b].length - groups[a].length || a.localeCompare(b, 'ko');
+    });
+    var sh = { name: '발주서', cells: {}, merges: [], widths: { 1: 2 }, heights: {} };
+    var put = function (r, c, x) { (sh.cells[r] = sh.cells[r] || {})[c] = x; };
+    var HEADS = ['현장명', '품목', '링크', '수량', '수취인 정보'], W = [16, 26, 12, 8, 16];
+    gnames.forEach(function (g, gi) {
+      var c0 = 2 + gi * 6; // B, H, N, T, …
+      put(2, c0, { st: 9, s: g });
+      for (var k = 1; k < 5; k++) put(2, c0 + k, { st: 9 });
+      sh.merges.push(colName(c0 - 1) + '2:' + colName(c0 + 3) + '2');
+      HEADS.forEach(function (h, k) { put(4, c0 + k, { st: 9, s: h }); sh.widths[c0 + k] = W[k]; });
+      sh.widths[c0 + 5] = 2;
+      var r = 5;
+      groups[g].sort(function (a, b) { return a.localeCompare(b, 'ko'); }).forEach(function (site) {
+        var its = bySite[site].slice().sort(function (a, b) { return (a.t || 0) - (b.t || 0); });
+        var who = siteContact(site === '현장 미지정' ? '' : site, its.slice().reverse());
+        var r0 = r;
+        its.forEach(function (it) {
+          put(r, c0, { st: 6 });
+          put(r, c0 + 1, { st: 7, s: it.name });
+          put(r, c0 + 2, it.custom ? { st: 8, link: it.link, label: '쿠팡 상품' } : { st: 7 });
+          put(r, c0 + 3, { st: 6, s: it.qty });
+          put(r, c0 + 4, { st: 6 });
+          r++;
+        });
+        put(r0, c0, { st: 6, s: site });
+        put(r0, c0 + 4, { st: 6, s: who ? who.name + (who.tel ? '\n' + who.tel : '') : '' });
+        if (r - r0 > 1) {
+          sh.merges.push(colName(c0 - 1) + r0 + ':' + colName(c0 - 1) + (r - 1));
+          sh.merges.push(colName(c0 + 3) + r0 + ':' + colName(c0 + 3) + (r - 1));
+        } else if (who && who.tel) sh.heights[r0] = 32;
+      });
+    });
+    return sh;
   }
 
   function ymd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
@@ -1497,6 +1697,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     $('setupView').hidden = true;
     $('addForm').hidden = false; $('listView').hidden = false; $('menuBtn').hidden = false; $('xlsxBtn').hidden = false;
     $('fSite').value = load('site', '');
+    $('fRcv').value = load('rcv', ''); $('fTel').value = load('tel', '');
     renderUnits(); render();
     refresh(false);
     askName(false);
@@ -1523,26 +1724,34 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   $('fName').addEventListener('focus', function () { expandForm(true); showSugg('name'); });
   $('fSite').addEventListener('input', function () { showSugg('site'); });
   $('fSite').addEventListener('focus', function () { showSugg('site'); });
-  ['name', 'site'].forEach(function (kind) {
-    var input = $(kind === 'name' ? 'fName' : 'fSite'), box = $(kind === 'name' ? 'fNameList' : 'fSiteList');
+  $('fSite').addEventListener('change', autofillRcv);
+  $('fRcv').addEventListener('input', function () { showSugg('rcv'); });
+  $('fRcv').addEventListener('focus', function () { showSugg('rcv'); });
+  $('fTel').addEventListener('blur', function () { this.value = phoneFmt(this.value); });
+  ['name', 'site', 'rcv'].forEach(function (kind) {
+    var input = $(SUGG[kind][0]), box = $(SUGG[kind][1]);
     // 목록을 누르는 순간 입력 칸이 blur 되며 목록이 사라지지 않게 pointerdown 에서 막는다
     box.addEventListener('pointerdown', function (e) { e.preventDefault(); });
     box.addEventListener('click', function (e) {
       var b = e.target.closest('[data-i]'); if (!b || !box._items) return;
       pickSugg(kind, box._items[+b.getAttribute('data-i')]);
     });
-    input.addEventListener('blur', function () { setTimeout(function () { hideSugg(kind); }, 150); });
+    // 다른 칸을 눌렀다가 바로 돌아오면(그새 다시 포커스) 닫지 않는다
+    input.addEventListener('blur', function () { setTimeout(function () { if (document.activeElement !== input) hideSugg(kind); }, 150); });
     input.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideSugg(kind); });
   });
-  $('recentBox').addEventListener('click', function (e) {
-    if (e.target.closest('#recentMore')) { recentOpen = !recentOpen; renderRecent(); return; }
-    var b = e.target.closest('[data-site]'); if (!b) return;
-    // 그 현장만 걸러서 날짜별 목록으로
-    state.site = b.getAttribute('data-site'); save('siteFilter', state.site);
-    state.tab = ''; save('tab', '');
-    state.view = 'list'; save('view', 'list');
-    render();
-    $('viewSw').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('siteView').addEventListener('click', function (e) {
+    if (e.target.closest('a')) return;
+    var pb = e.target.closest('[data-per]');
+    if (pb) {
+      var was = state.period;
+      state.period = pb.getAttribute('data-per'); save('period', state.period);
+      render();
+      if (state.period === 'all' && was !== 'all') refresh(true); // 오래된 입고완료까지
+      return;
+    }
+    var row = e.target.closest('[data-id]');
+    if (row) editItem(row.getAttribute('data-id'));
   });
   $('addCancel').onclick = function () { expandForm(false); };
   $('fLink').addEventListener('input', updatePreview);

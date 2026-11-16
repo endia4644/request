@@ -22,6 +22,8 @@ require('fs').mkdirSync(OUT, { recursive: true });
     await p.goto(link);
     await p.fill('#nmIn', name);
     await p.click('#nmOk');
+    assert.equal(await p.getAttribute('[data-view="site"]', 'aria-pressed'), 'true', '첫 화면은 현장별');
+    await p.click('[data-view="list"]');
     await p.waitForTimeout(400);
     return p;
   }
@@ -48,13 +50,15 @@ require('fs').mkdirSync(OUT, { recursive: true });
 
   const sheet = await (await fetch(`http://localhost:${port}/__sheet`)).json();
   console.log('시트:', JSON.stringify(sheet, null, 0));
-  assert.equal(sheet[1][2], '락스 4L'); assert.equal(sheet[1][4], '2통'); assert.equal(sheet[1][5], '김철수');
+  assert.equal(sheet[1][2], '락스 4L'); assert.equal(sheet[1][4], '2통'); assert.equal(sheet[1][7], '김철수');
   assert.match(sheet[1][3], /^=HYPERLINK\("https:\/\/www\.coupang\.com\/np\/search\?q=/);
   assert.equal(sheet[2][3], '=HYPERLINK("https://link.coupang.com/a/bXyZ12","쿠팡 상품")');
   assert.equal(await a.locator('.item').first().locator('.cbtn').getAttribute('href'), 'https://link.coupang.com/a/bXyZ12');
 
   // 현장별 최근 발주 카드
-  assert.match(await a.textContent('#recentBox'), /현장별 최근 발주[\s\S]*○○빌딩 3층[\s\S]*물티슈 1통[\s\S]*락스 4L 2통/);
+  await a.click('[data-view="site"]');
+  assert.match(await a.textContent('#siteView'), /○○빌딩 3층\s*2건[\s\S]*물티슈\s*1통[\s\S]*락스 4L\s*2통/);
+  await a.click('[data-view="list"]');
 
   // 품목 자동완성: 초성 → 윈덱스, 고르면 단위까지 / 링크 있는 품목은 링크도
   await a.click('#fName');
@@ -121,7 +125,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   await a.waitForFunction(() => !document.querySelector('#items').textContent.includes('락스'), null, { timeout: 25000 });
   await a.click('[data-tab="주문완료"]');
   assert.match(await a.textContent('#items'), /락스 4L/);
-  assert.equal((await (await fetch(`http://localhost:${port}/__sheet`)).json())[1][6], '주문완료');
+  assert.equal((await (await fetch(`http://localhost:${port}/__sheet`)).json())[1][8], '주문완료');
 
   // 고치기 창
   await a.click('.item:has-text("락스") .nm');
@@ -131,7 +135,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   await a.fill('#eMemo', '2개만 먼저');
   await a.click('#eSave');
   await a.waitForTimeout(800);
-  assert.equal((await (await fetch(`http://localhost:${port}/__sheet`)).json())[1][7], '2개만 먼저');
+  assert.equal((await (await fetch(`http://localhost:${port}/__sheet`)).json())[1][9], '2개만 먼저');
 
   // 삭제
   a.on('dialog', (d) => d.accept());
@@ -145,7 +149,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
 
   // 엑셀 내보내기: 오래된 입고완료 한 줄을 시트에 직접 넣고, 이번 달 / 전체 를 비교
   const sh = env.sheets['청소용품'];
-  sh.getRange(sh.getLastRow() + 1, 1, 1, 9).setValues([[new Date(2026, 5, 3, 9, 5), '△△센터', '옛날 락스', '', '3통', '김철수', '입고완료', '메모 <&> "따옴표"', 'old1']]);
+  sh.getRange(sh.getLastRow() + 1, 1, 1, 11).setValues([[new Date(2026, 5, 3, 9, 5), '△△센터', '옛날 락스', '', '3통', '', '', '김철수', '입고완료', '메모 <&> "따옴표"', 'old1']]);
   await a.click('#xlsxBtn');
   await a.waitForFunction(() => /엑셀 파일 받기 \(2건\)/.test(document.querySelector('#xGo').textContent));
   await a.screenshot({ path: path.join(OUT, '6_export.png') });
@@ -158,20 +162,20 @@ require('fs').mkdirSync(OUT, { recursive: true });
   assert.match(dl.suggestedFilename(), /^청소용품_전체_\d{4}-\d\d-\d\d\.xlsx$/);
   const py = require('child_process').execFileSync('python3', ['-c', `
 import openpyxl, json, sys
-ws = openpyxl.load_workbook(sys.argv[1]).active
+ws = openpyxl.load_workbook(sys.argv[1])['목록']
 print(json.dumps([[c.value if not hasattr(c.value, 'isoformat') else c.value.isoformat() for c in r] for r in ws.iter_rows()], ensure_ascii=False))
 print(ws.freeze_panes, ws.auto_filter.ref, ws['A2'].number_format)
 `, xfile]).toString().trim().split('\n');
   console.log(py.join('\n'));
   const rows = JSON.parse(py[0]);
-  assert.deepEqual(rows[0], ['등록일시', '현장', '품명', '수량', '상태', '등록자', '메모', '쿠팡']);
+  assert.deepEqual(rows[0], ['등록일시', '현장', '품명', '수량', '수취인', '연락처', '상태', '등록자', '메모', '쿠팡']);
   assert.equal(rows.length, 4);
   assert.equal(rows[1][2], '옛날 락스'); // 오래된 것부터
   assert.equal(rows[1][0], '2026-06-03T09:05:00');
-  assert.equal(rows[1][6], '메모 <&> "따옴표"');
-  assert.match(rows[1][7], /^=HYPERLINK\("https:\/\/www\.coupang\.com\/np\/search\?q=/);
-  assert.ok(rows.some((r) => r[7] === '=HYPERLINK("https://link.coupang.com/a/bXyZ12","쿠팡 상품")'));
-  assert.equal(py[1], 'A2 A1:H4 yyyy-mm-dd hh:mm');
+  assert.equal(rows[1][8], '메모 <&> "따옴표"');
+  assert.match(rows[1][9], /^=HYPERLINK\("https:\/\/www\.coupang\.com\/np\/search\?q=/);
+  assert.ok(rows.some((r) => r[9] === '=HYPERLINK("https://link.coupang.com/a/bXyZ12","쿠팡 상품")'));
+  assert.equal(py[1], 'A2 A1:J4 yyyy-mm-dd hh:mm');
   await a.click('#xCancel');
   await a.waitForTimeout(300);
 
@@ -204,8 +208,8 @@ print(json.dumps({n: [[c.value for c in r] for r in wb[n].iter_rows()] for n in 
 `, x2]).toString();
   const wb2 = JSON.parse(py2);
   console.log(JSON.stringify(wb2['품목별 합계']));
-  assert.deepEqual(Object.keys(wb2), ['목록', '품목별 합계']);
   assert.equal(wb2['목록'].length, 2);
+  assert.deepEqual(Object.keys(wb2), ['발주서', '목록', '품목별 합계']);
   assert.deepEqual(wb2['품목별 합계'][1].slice(0, 6), ['옛날 락스', 1, '3통', 0, 0, 1]);
   await a.click('#xCancel');
   await a.waitForTimeout(300);
@@ -216,11 +220,53 @@ print(json.dumps({n: [[c.value for c in r] for r in wb[n].iter_rows()] for n in 
   assert.equal(await a.isVisible('#items'), true);
   assert.equal(await a.getAttribute('[data-view="list"]', 'aria-pressed'), 'true');
 
-  // 최근 발주 카드의 현장을 누르면 그 현장만
-  await a.click('#recentBox [data-site="○○빌딩 3층"]');
+  // 수취인: 현장 고르면 이름 목록 → 이름 고르면 전화번호까지
+  await a.click('#fName'); await a.fill('#fName', '홈스타');
+  await a.fill('#fSite', ''); await a.type('#fSite', '△△');
+  await a.click('#fSiteList button:has-text("△△센터")');
+  await a.fill('#fRcv', ''); await a.fill('#fTel', '');
+  await a.fill('#fRcv', '홍길동'); await a.fill('#fTel', '01055556666');
+  await a.click('#addBtn');
+  await a.waitForTimeout(1200);
+  const sh5 = await (await fetch(`http://localhost:${port}/__sheet`)).json();
+  const homestar = sh5.find((r) => r[2] === '홈스타');
+  assert.deepEqual([homestar[1], homestar[5], homestar[6]], ['△△센터', '홍길동', '010-5555-6666']);
+  // 다음 등록: 현장만 고르면 수취인·번호가 저절로
+  await a.click('#fName'); await a.fill('#fName', '윈덱스');
+  await a.fill('#fSite', ''); await a.fill('#fRcv', ''); await a.fill('#fTel', '');
+  await a.type('#fSite', '△△');
+  await a.click('#fSiteList button:has-text("△△센터")');
+  assert.equal(await a.inputValue('#fRcv'), '홍길동');
+  assert.equal(await a.inputValue('#fTel'), '010-5555-6666');
+  // 수취인 칸을 누르면 그 현장 사람 목록 (수취인 탭에서도)
+  await a.fill('#fRcv', '');
+  await a.click('#fTel'); await a.click('#fRcv');
+  await a.waitForSelector('#fRcvList:not([hidden])');
+  assert.match(await a.textContent('#fRcvList'), /홍길동[\s\S]*010-5555-6666/);
+  await a.screenshot({ path: path.join(OUT, '14_rcv.png') });
+  await a.click('#fRcvList button:has-text("홍길동")');
+  assert.equal(await a.inputValue('#fTel'), '010-5555-6666');
+  await a.click('#addCancel');
+  // 현장별 보기에 수취인 줄
+  await a.click('[data-view="site"]');
   await a.waitForTimeout(300);
-  assert.equal(await a.locator('.item').count() >= 2, true);
-  assert.equal(await a.getAttribute('[data-tab=""]', 'aria-selected'), 'true');
+  assert.match(await a.textContent('#siteView'), /△△센터[\s\S]*수취인 홍길동 · 010-5555-6666[\s\S]*홈스타/);
+  await a.screenshot({ path: path.join(OUT, '15_site.png'), fullPage: true });
+  // 발주서 시트: 묶음·병합·수취인
+  await a.click('#xlsxBtn');
+  await a.waitForFunction(() => /엑셀 파일 받기/.test(document.querySelector('#xGo').textContent));
+  const [dl3] = await Promise.all([a.waitForEvent('download'), a.click('#xGo')]);
+  const x3 = path.join(OUT, 'export_order.xlsx'); await dl3.saveAs(x3);
+  const py3 = require('child_process').execFileSync('python3', ['-c', `
+import openpyxl, json, sys
+ws = openpyxl.load_workbook(sys.argv[1])['발주서']
+print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c in r if c.value is not None}, 'merged': sorted(str(m) for m in ws.merged_cells.ranges)}, ensure_ascii=False))
+`, x3]).toString();
+  const os3 = JSON.parse(py3);
+  console.log('발주서:', JSON.stringify(os3));
+  assert.equal(os3.cells.B4, '현장명'); assert.equal(os3.cells.F4, '수취인 정보');
+  assert.ok(Object.values(os3.cells).includes('홍길동\n010-5555-6666'));
+  await a.click('#xCancel');
 
   // 설정 메뉴
   await a.click('#menuBtn');
@@ -267,6 +313,7 @@ print(json.dumps({n: [[c.value for c in r] for r in wb[n].iter_rows()] for n in 
   // 앱 시작 → 등록 → 새 시트에 들어감
   await ip.click('#instStart');
   await ip.fill('#nmIn', '김철수'); await ip.click('#nmOk'); await ip.waitForTimeout(300);
+  await ip.click('[data-view="list"]');
   await ip.fill('#fName', '쓰레기봉투');
   await ip.click('#addBtn');
   await ip.waitForSelector('.item:not(.pending)');
