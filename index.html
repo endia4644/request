@@ -982,9 +982,10 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
 
   // ── 처음 설치 (휴대폰만으로) ───────────────────────────────
   var codeText = '';
+  // 주석 뺀 붙여넣기용 Code.paste.gs (tools/build_paste.js) — 휴대폰 붙여넣기에서 주석이 코드를 먹는 사고 방지
   function loadCode() {
     if (codeText || GAS) return;
-    fetch('Code.gs', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.text(); })
+    fetch('Code.paste.gs', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.text(); })
       .then(function (t) { codeText = t; $('codeBox').value = t; })
       .catch(function () { $('copyOk').textContent = ''; });
   }

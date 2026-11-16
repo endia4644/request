@@ -110,7 +110,8 @@ function makeEnv(opts) {
     },
   };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8'), ctx, { filename: 'Code.gs' });
+  const file = process.env.CODE_FILE || 'Code.gs'; // CODE_FILE=Code.paste.gs 로 붙여넣기용도 검사
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), ctx, { filename: file });
   return { ctx, ss, sheets, props, log };
 }
 
