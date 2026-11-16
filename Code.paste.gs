@@ -149,6 +149,9 @@ return withLock_((() => removeItem_(req)));
 case 'thumb':
 return thumbItem_(req);
 
+case 'importContacts':
+return withLock_((() => importContacts_(req)));
+
 default:
 return {
 ok: false,
@@ -286,6 +289,48 @@ name: String(v[col['이름'] - 1] || '').trim(),
 tel: normalizePhone(v[col['전화번호'] - 1]),
 addr: String(v[col['주소'] - 1] || '').trim()
 }))).filter((c => c.name));
+}
+
+function importContacts_(req) {
+const rows = Array.isArray(req.rows) ? req.rows.slice(0, 3e3) : [];
+const clean = rows.map((r => ({
+grp: clip_(r.grp, 40),
+dept: clip_(r.dept, 40),
+site: clip_(r.site, LIMIT.site),
+name: clip_(r.name, LIMIT.rcv),
+tel: normalizePhone(clip_(r.tel, LIMIT.tel)),
+addr: clip_(r.addr, LIMIT.addr)
+}))).filter((r => r.name));
+if (!clean.length) return {
+ok: false,
+error: '명단에 이름이 하나도 없어요'
+};
+const old = {};
+const oldGrp = {};
+readContacts_().forEach((c => {
+old[c.site + '|' + c.name] = c;
+if (c.grp) oldGrp[c.site] = c.grp;
+}));
+const sh = contactSheet_();
+const last = sh.getLastRow();
+const width = Math.max(sh.getLastColumn(), CONTACT_HEAD.length);
+if (last >= 2) sh.getRange(2, 1, last - 1, width).clearContent();
+sh.getRange(1, 1, 1, width).clearContent();
+sh.getRange(1, 1, 1, CONTACT_HEAD.length).setValues([ CONTACT_HEAD ]);
+sh.getRange('D2:D').setNumberFormat('@');
+const out = clean.map((r => {
+const o = old[r.site + '|' + r.name] || {};
+return [ safeText(r.grp || oldGrp[r.site] || r.dept || ''), safeText(r.site), safeText(r.name), safeText(r.tel || o.tel || ''), safeText(r.addr || o.addr || '') ];
+}));
+sh.getRange(2, 1, out.length, CONTACT_HEAD.length).setValues(out);
+return {
+ok: true,
+count: out.length,
+sites: Object.keys(clean.reduce(((m, r) => {
+m[r.site] = 1;
+return m;
+}), {})).length
+};
 }
 
 function upsertContact_(site, name, tel, addr) {

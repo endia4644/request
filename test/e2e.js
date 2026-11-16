@@ -361,6 +361,59 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
     await octx.close(); oldSrv.server.close();
   }
 
+  // ── 앱에서 근무자 명단 올리기: 오션 .xls(=HTML 표) / .xlsx ──
+  {
+    const fs = require('fs');
+    const up = require('./serve').start(8790);
+    const uctx = await b.newContext(phone);
+    const upage = await uctx.newPage();
+    upage.on('pageerror', (e) => errors.push('명단: ' + e.message));
+    await upage.goto('http://localhost:8790/');
+    await upage.evaluate(() => {
+      localStorage.setItem('sup.cfg', JSON.stringify({ u: 'http://localhost:8790/api', k: 'testkey123' }));
+      localStorage.setItem('sup.me', JSON.stringify('김철수'));
+    });
+    await upage.reload();
+    await upage.waitForSelector('#diagImport');
+    // 가짜 오션 파일 (HTML 표, .xls 이름) — 실제 명단은 저장소에 넣지 않는다
+    const html = '<html><body><table><tr><th>성명</th><th>부서</th><th>팀</th><th>직급</th><th>전화번호</th><th>ID</th></tr>' +
+      '<tr><td>가나다</td><td>가나 브랜드</td><td>강남</td><td>-</td><td>010-1234-0001</td><td>a</td></tr>' +
+      '<tr><td>라마바</td><td>가나 브랜드</td><td>강남</td><td>-</td><td>01012340002</td><td>b</td></tr>' +
+      '<tr><td>사아자</td><td>다라 빌딩</td><td>평일</td><td>-</td><td>010-1234-0003</td><td>c</td></tr>' +
+      '<tr><td>차카타</td><td>-</td><td>-</td><td>-</td><td>010-1234-0004</td><td>d</td></tr></table></body></html>';
+    const xlsFile = path.join(OUT, '가짜_근무자.xls'); fs.writeFileSync(xlsFile, html);
+    await upage.click('#diagImport');
+    await upage.setInputFiles('#impFile', xlsFile);
+    await upage.waitForFunction(() => !document.querySelector('#impGo').disabled);
+    assert.match(await upage.textContent('#impInfo'), /4명 · 현장 3곳/);
+    await upage.screenshot({ path: path.join(OUT, '19_import.png') });
+    await upage.click('#impGo');
+    await upage.waitForFunction(() => !document.querySelector('#sheet').classList.contains('on'), null, { timeout: 10000 });
+    const c1 = up.env.sheets['수취인'];
+    const got = []; for (let r = 2; r <= c1.getLastRow(); r++) got.push([2, 3, 4].map((c) => c1.peek(r, c).v).join('|'));
+    console.log('올린 명단:', got.join(' / '));
+    assert.deepEqual(got, ['가나 브랜드 강남|가나다|010-1234-0001', '가나 브랜드 강남|라마바|010-1234-0002', '다라 빌딩|사아자|010-1234-0003', '본사·관리|차카타|010-1234-0004']);
+    await upage.waitForFunction(() => !document.querySelector('#diagBox') || document.querySelector('#diagBox').hidden, null, { timeout: 10000 });
+    // .xlsx (구분 열 포함) 도 읽는다
+    const xlsx = path.join(OUT, '가짜_명단.xlsx');
+    require('child_process').execFileSync('python3', ['-c', `
+import openpyxl, sys
+wb = openpyxl.Workbook(); ws = wb.active; ws.title = '수취인'
+ws.append(['구분', '현장', '이름', '전화번호', '주소'])
+ws.append(['가나 묶음', '가나 브랜드 강남', '가나다', '010-1234-0001', ''])
+ws.append(['기타', '마바 센터', '하하하', '010-9999-0001', '서울시 ○○로 5'])
+wb.save(sys.argv[1])`, xlsx]);
+    await upage.click('#menuBtn'); await upage.waitForTimeout(300);
+    await upage.click('#mImport');
+    await upage.setInputFiles('#impFile', xlsx);
+    await upage.waitForFunction(() => !document.querySelector('#impGo').disabled);
+    assert.match(await upage.textContent('#impInfo'), /2명 · 현장 2곳/);
+    await upage.click('#impGo');
+    await upage.waitForFunction(() => !document.querySelector('#sheet').classList.contains('on'), null, { timeout: 10000 });
+    assert.equal(c1.peek(2, 1).v, '가나 묶음'); assert.equal(c1.peek(3, 5).v, '서울시 ○○로 5'); assert.equal(c1.getLastRow(), 3);
+    await uctx.close(); up.server.close();
+  }
+
   // ── 서버 주소 이사: 옛 주소를 저장한 휴대폰이 새 주소로 옮겨 간다 (팀 코드 맞을 때만) ──
   {
     const mctx = await b.newContext(phone);

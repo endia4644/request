@@ -110,6 +110,7 @@ function handle_(req) {
       case 'update': return withLock_(() => updateItem_(req));
       case 'remove': return withLock_(() => removeItem_(req));
       case 'thumb': return thumbItem_(req);
+      case 'importContacts': return withLock_(() => importContacts_(req));
       default: return { ok: false, error: '알 수 없는 요청: ' + req.action };
     }
   } catch (err) {
@@ -246,6 +247,36 @@ function readContacts_() {
       addr: String(v[col['주소'] - 1] || '').trim(),
     }))
     .filter((c) => c.name);
+}
+
+/**
+ * 앱에서 올린 근무자 명단으로 수취인 탭을 통째로 바꾼다 (다른 탭은 건드리지 않는다).
+ * rows: [{grp, dept, site, name, tel, addr}] — 이미 적혀 있던 주소·구분은 같은 현장·이름이면 살린다.
+ */
+function importContacts_(req) {
+  const rows = Array.isArray(req.rows) ? req.rows.slice(0, 3000) : [];
+  const clean = rows.map((r) => ({
+    grp: clip_(r.grp, 40), dept: clip_(r.dept, 40), site: clip_(r.site, LIMIT.site), name: clip_(r.name, LIMIT.rcv),
+    tel: normalizePhone(clip_(r.tel, LIMIT.tel)), addr: clip_(r.addr, LIMIT.addr),
+  })).filter((r) => r.name);
+  if (!clean.length) return { ok: false, error: '명단에 이름이 하나도 없어요' };
+  const old = {};
+  const oldGrp = {};
+  readContacts_().forEach((c) => { old[c.site + '|' + c.name] = c; if (c.grp) oldGrp[c.site] = c.grp; });
+  const sh = contactSheet_();
+  const last = sh.getLastRow();
+  const width = Math.max(sh.getLastColumn(), CONTACT_HEAD.length);
+  if (last >= 2) sh.getRange(2, 1, last - 1, width).clearContent();
+  sh.getRange(1, 1, 1, width).clearContent();
+  sh.getRange(1, 1, 1, CONTACT_HEAD.length).setValues([CONTACT_HEAD]);
+  sh.getRange('D2:D').setNumberFormat('@');
+  const out = clean.map((r) => {
+    const o = old[r.site + '|' + r.name] || {};
+    // 구분: 파일의 구분 열 → 시트에 있던 구분 → 부서 이름 (오션 원본엔 구분 열이 없다)
+    return [safeText(r.grp || oldGrp[r.site] || r.dept || ''), safeText(r.site), safeText(r.name), safeText(r.tel || o.tel || ''), safeText(r.addr || o.addr || '')];
+  });
+  sh.getRange(2, 1, out.length, CONTACT_HEAD.length).setValues(out);
+  return { ok: true, count: out.length, sites: Object.keys(clean.reduce((m, r) => { m[r.site] = 1; return m; }, {})).length };
 }
 
 /** 등록할 때 쓴 수취인을 목록에 더한다 (같은 현장·이름이면 비어 있거나 바뀐 전화번호·주소만 고침) */

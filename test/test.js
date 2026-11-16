@@ -324,4 +324,27 @@ t('잘못된 JSON', () => {
   });
 }
 
+// ── 앱에서 명단 올리기 ───────────────────────────────────────
+{
+  const e6 = makeEnv(); e6.props.TEAM_KEY = 'k6';
+  const post6 = (o) => JSON.parse(e6.ctx.doPost({ postData: { contents: JSON.stringify(Object.assign({ k: 'k6' }, o)) } }).content);
+  t('명단 올리기: 수취인 탭만 통째로 바꾸고, 있던 주소·구분은 살린다', () => {
+    post6({ action: 'add', name: '락스', site: '가나점', rcv: '홍길동', tel: '010-1111-2222', addr: '서울시 ○○로 1' });
+    e6.sheets['수취인'].getRange(2, 1).setValue('가나 묶음');
+    const r = post6({ action: 'importContacts', rows: [
+      { site: '가나점', name: '홍길동', tel: '01011112222' },
+      { site: '가나점', name: '이영희', tel: '010-3333-4444' },
+      { grp: '다라 묶음', site: '다라점', name: '박민수', tel: '1055556666' },
+      { dept: '마바 부서', site: '마바 부서 강남', name: '최지수', tel: '010-7777-8888' },
+    ] });
+    assert.deepEqual([r.ok, r.count, r.sites], [true, 4, 3]);
+    const c = JSON.parse(e6.ctx.doGet({ parameter: { action: 'list', k: 'k6', contacts: '1' } }).content).contacts;
+    assert.deepEqual(c[0], { grp: '가나 묶음', site: '가나점', name: '홍길동', tel: '010-1111-2222', addr: '서울시 ○○로 1' });
+    assert.deepEqual(c[2], { grp: '다라 묶음', site: '다라점', name: '박민수', tel: '010-5555-6666', addr: '' });
+    assert.equal(c[3].grp, '마바 부서', '구분 열이 없으면 부서 이름');
+    assert.equal(e6.sheets['청소용품'].peek(2, 3).v, '락스', '청소용품 탭은 그대로');
+    assert.equal(post6({ action: 'importContacts', rows: [] }).ok, false);
+  });
+}
+
 console.log(`\n${n}개 모두 통과`);
