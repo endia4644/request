@@ -277,18 +277,70 @@ col.width = head.length;
 return col;
 }
 
+const NONLOC_TEAM = [ '-', '', '시설팀', '평일', '주말', '상주' ];
+
+function contactHeader_(row) {
+const h = row.map((v => String(v == null ? '' : v).replace(/\s/g, '')));
+const at = (...names) => {
+for (const n of names) {
+const i = h.indexOf(n);
+if (i >= 0) return i;
+}
+return -1;
+};
+const m = {
+name: at('이름', '성명', '성함'),
+site: at('현장', '현장명'),
+dept: at('부서'),
+team: at('팀'),
+grp: at('구분'),
+tel: at('전화번호', '연락처', '휴대폰', '휴대전화', '핸드폰'),
+addr: at('주소')
+};
+if (m.name < 0 || m.site < 0 && m.dept < 0) return null;
+return m;
+}
+
 function readContacts_() {
-const sh = contactSheet_();
-const last = sh.getLastRow();
-if (last < 2) return [];
-const col = contactCols_(sh);
-return sh.getRange(2, 1, last - 1, col.width).getValues().map((v => ({
-grp: String(v[col['구분'] - 1] || '').trim(),
-site: String(v[col['현장'] - 1] || '').trim(),
-name: String(v[col['이름'] - 1] || '').trim(),
-tel: normalizePhone(v[col['전화번호'] - 1]),
-addr: String(v[col['주소'] - 1] || '').trim()
-}))).filter((c => c.name));
+contactSheet_();
+const ss = ss_();
+const sheets = ss.getSheets().filter((sh => sh.getName() !== CFG.SHEET)).sort(((a, b) => (b.getName() === CONTACT_SHEET) - (a.getName() === CONTACT_SHEET)));
+const out = [];
+const seen = {};
+sheets.forEach((sh => {
+const lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+if (lastRow < 2 || lastCol < 2) return;
+const vals = sh.getRange(1, 1, Math.min(lastRow, 5e3), Math.min(lastCol, 40)).getValues();
+let hi = -1, m = null;
+for (let i = 0; i < Math.min(5, vals.length); i++) {
+m = contactHeader_(vals[i]);
+if (m) {
+hi = i;
+break;
+}
+}
+if (!m) return;
+const get = (r, k) => m[k] >= 0 ? String(r[m[k]] == null ? '' : r[m[k]]).trim() : '';
+for (let i = hi + 1; i < vals.length; i++) {
+const r = vals[i];
+const name = get(r, 'name');
+if (!name) continue;
+const dept = get(r, 'dept'), team = get(r, 'team');
+let site = get(r, 'site');
+if (!site) site = !dept || dept === '-' ? '본사·관리' : dept + (NONLOC_TEAM.indexOf(team) >= 0 ? '' : ' ' + team);
+const key = site + '|' + name;
+if (seen[key]) continue;
+seen[key] = 1;
+out.push({
+grp: get(r, 'grp') || (dept && dept !== '-' ? dept : ''),
+site: site,
+name: name,
+tel: normalizePhone(m.tel >= 0 ? r[m.tel] : ''),
+addr: get(r, 'addr')
+});
+}
+}));
+return out;
 }
 
 function importContacts_(req) {

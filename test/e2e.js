@@ -32,7 +32,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   const a = await open('김철수');
   // 새 서버 + 수취인 명단 없음 → 맨 위에 명단 가져오기 안내
   await a.waitForSelector('#diagBox:not([hidden])', { timeout: 10000 });
-  assert.match(await a.textContent('#diagBox'), /근무자 명단이 아직 없어요/);
+  assert.match(await a.textContent('#diagBox'), /근무자 명단을 못 찾았어요/);
   assert.equal(new URL(a.url()).hash, '', '연결 정보는 주소창에서 지운다');
   await a.screenshot({ path: path.join(OUT, '1_empty.png') });
 

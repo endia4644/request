@@ -639,7 +639,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         '노트북 Apps Script → <b>배포 → 배포 관리</b> → 이 주소의 배포 ✏️ → 버전 <b>“새 버전”</b> → 배포<br>' +
         '<code>' + esc((cfg && cfg.u || '').replace(/^https:\/\/script\.google\.com\/macros\/s\//, '…/')) + '</code></p>';
     } else if (state.server === 'new' && state.contactsAt && !state.contacts.length) {
-      html = '<span class="dt">근무자 명단이 아직 없어요</span><p>오션 근무자 파일을 올리면 현장 → 성함 → 번호가 드롭다운으로 떠요.</p>' +
+      html = '<span class="dt">근무자 명단을 못 찾았어요</span><p>시트에 넣었다면 그 탭 첫 줄에 <b>이름(성명)</b>과 <b>현장(부서)</b>이 있는지 봐 주세요. 서버가 모든 탭에서 찾아요. 아니면 오션 파일을 여기서 올려도 돼요.</p>' +
         '<button type="button" class="primary" id="diagImport" style="margin-top:10px;height:46px">📄 근무자 명단 올리기</button>';
     } else if (state.server === 'new' && state.contacts.length && !state.contacts.some(function (c) { return c.site; })) {
       html = '<span class="dt">수취인 탭의 머리 줄을 확인해 주세요</span><p>첫 줄이 <b>구분 | 현장 | 이름 | 전화번호 | 주소</b> 여야 현장별로 묶여요.</p>';
@@ -1775,7 +1775,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
             if (state.err) return;
             var sites = {};
             state.contacts.forEach(function (c) { if (c.site) sites[c.site] = 1; });
-            toast(state.contacts.length ? '근무자 ' + state.contacts.length + '명 · 현장 ' + Object.keys(sites).length + '곳 불러왔어요' : '수취인 탭에 근무자가 없어요');
+            toast(state.contacts.length ? '근무자 ' + state.contacts.length + '명 · 현장 ' + Object.keys(sites).length + '곳 불러왔어요' : '근무자 명단을 못 찾았어요 — 시트 어느 탭이든 첫 줄에 이름(성명)과 현장(부서)이 있어야 해요');
           });
         };
         var ms2 = root.querySelector('#mServer');

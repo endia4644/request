@@ -25,7 +25,7 @@ t('팀 코드가 틀리면 막는다', () => {
 
 t('주소만 열면 앱 화면', () => assert.equal(g.doGet({ parameter: {} }).kind, 'html'));
 
-t('빈 목록', () => assert.deepEqual(list(), { ok: true, items: [], now: list().now }));
+t('빈 목록', () => { const r = list(); assert.equal(r.ok, true); assert.deepEqual(r.items, []); assert.equal(typeof r.now, 'number'); });
 
 t('등록 → 품명 옆 칸에 쿠팡 검색 링크', () => {
   const r = post({ action: 'add', name: '락스 4L', qty: '2통', site: '○○빌딩', by: '김철수', memo: '향 없는 거' });
@@ -286,7 +286,7 @@ t('잘못된 JSON', () => {
     sh.getRange(2, 1, 2, 5).setValues([['△△센터', '박민수', 1033334444, '○○브랜드', ''], ['△△센터', '최지수', '010-5555-6666', '○○브랜드', '']]);
     const c = list5({ contacts: '1' }).contacts;
     assert.deepEqual(c[0], { grp: '○○브랜드', site: '△△센터', name: '박민수', tel: '010-3333-4444', addr: '' });
-    assert.equal(sh.peek(1, 6).v, '주소'); // 없던 머리는 뒤에 단다
+    // (읽기만 할 때는 시트를 고치지 않는다 — 없는 머리는 새 사람을 적을 때 단다)
   });
 
   t('쿠팡 사진: og:image 를 받아 사진 칸에 =IMAGE()', () => {
@@ -344,6 +344,37 @@ t('잘못된 JSON', () => {
     assert.equal(c[3].grp, '마바 부서', '구분 열이 없으면 부서 이름');
     assert.equal(e6.sheets['청소용품'].peek(2, 3).v, '락스', '청소용품 탭은 그대로');
     assert.equal(post6({ action: 'importContacts', rows: [] }).ok, false);
+  });
+}
+
+// ── 명단이 '수취인' 탭이 아닌 다른 탭에 있어도 읽는다 ──────────────
+{
+  const e7 = makeEnv(); e7.props.TEAM_KEY = 'k7';
+  const list7 = () => JSON.parse(e7.ctx.doGet({ parameter: { action: 'list', k: 'k7', contacts: '1' } }).content);
+  t('다른 탭(오션 원본 모양: 성명|부서|팀|전화번호)도 찾아 읽는다', () => {
+    list7(); // 청소용품·수취인 탭 생성
+    const w = e7.ss.insertSheet('회원목록');
+    w.getRange(1, 1, 1, 6).setValues([['성명', '부서', '팀', '직급', '전화번호', 'ID']]);
+    w.getRange(2, 1, 4, 6).setValues([
+      ['가나다', '가나 브랜드', '강남', '-', '010-1234-0001', 'a'],
+      ['라마바', '가나 브랜드', '평일', '-', 1012340002, 'b'],
+      ['사아자', '-', '-', '-', '010-1234-0003', 'c'],
+      ['', '', '', '', '', ''],
+    ]);
+    const memo = e7.ss.insertSheet('메모'); // 명단이 아닌 탭은 무시
+    memo.getRange(1, 1, 2, 2).setValues([['할 일', '비고'], ['청소', '']]);
+    const c = list7().contacts;
+    assert.deepEqual(c, [
+      { grp: '가나 브랜드', site: '가나 브랜드 강남', name: '가나다', tel: '010-1234-0001', addr: '' },
+      { grp: '가나 브랜드', site: '가나 브랜드', name: '라마바', tel: '010-1234-0002', addr: '' },
+      { grp: '', site: '본사·관리', name: '사아자', tel: '010-1234-0003', addr: '' },
+    ]);
+  });
+  t('수취인 탭이 먼저 (같은 현장·이름이면 수취인 탭 것)', () => {
+    e7.sheets['수취인'].getRange(2, 1, 1, 5).setValues([['내 묶음', '가나 브랜드 강남', '가나다', '010-0000-0000', '서울시 ○○로 3']]);
+    const c = list7().contacts;
+    assert.deepEqual(c[0], { grp: '내 묶음', site: '가나 브랜드 강남', name: '가나다', tel: '010-0000-0000', addr: '서울시 ○○로 3' });
+    assert.equal(c.length, 3);
   });
 }
 
