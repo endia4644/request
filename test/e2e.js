@@ -51,7 +51,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   assert.equal(sheet[1][2], '락스 4L'); assert.equal(sheet[1][4], '2통'); assert.equal(sheet[1][5], '김철수');
   assert.match(sheet[1][3], /^=HYPERLINK\("https:\/\/www\.coupang\.com\/np\/search\?q=/);
   assert.equal(sheet[2][3], '=HYPERLINK("https://link.coupang.com/a/bXyZ12","쿠팡 상품")');
-  assert.equal(await a.getAttribute('.item:nth-child(1) .cbtn', 'href'), 'https://link.coupang.com/a/bXyZ12');
+  assert.equal(await a.locator('.item').first().locator('.cbtn').getAttribute('href'), 'https://link.coupang.com/a/bXyZ12');
 
   // 공유 문구를 통째로 붙여넣으면 품명·링크가 채워진다 (📋 붙여넣기 버튼)
   await a.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -74,13 +74,14 @@ require('fs').mkdirSync(OUT, { recursive: true });
   await m.click('#addBtn');
   await m.waitForFunction(() => document.querySelectorAll('.item:not(.pending)').length === 3);
   await a.waitForFunction(() => document.querySelectorAll('.item').length === 3, null, { timeout: 25000 });
-  assert.match(await a.textContent('.item:nth-child(1)'), /NEW/);
+  assert.match(await a.locator('.item').first().textContent(), /NEW/);
+  assert.match(await a.textContent('.dhead'), /^오늘 · \d+월 \d+일 \([일월화수목금토]\) 3건$/);
   await a.screenshot({ path: path.join(OUT, '2_list.png'), fullPage: true });
 
   // 검색 링크만 있는 항목에 '링크 붙이기' → 상품 링크로 바뀌고 시트에도
   await a.evaluate(() => navigator.clipboard.writeText('쿠팡 https://link.coupang.com/a/BAG100'));
   await a.click('.item:has-text("종량제") [data-paste]');
-  await a.waitForFunction(() => /BAG100/.test(document.querySelector('.item:nth-child(1) .cbtn').getAttribute('href') || ''), null, { timeout: 10000 });
+  await a.waitForFunction(() => /BAG100/.test(document.querySelector('.item .cbtn').getAttribute('href') || ''), null, { timeout: 10000 });
   await a.waitForTimeout(500);
   const sh3 = await (await fetch(`http://localhost:${port}/__sheet`)).json();
   assert.ok(sh3.some((r) => r[3] === '=HYPERLINK("https://link.coupang.com/a/BAG100","쿠팡 상품")'), '시트에 상품 링크');
@@ -145,6 +146,47 @@ print(ws.freeze_panes, ws.auto_filter.ref, ws['A2'].number_format)
   assert.equal(py[1], 'A2 A1:H4 yyyy-mm-dd hh:mm');
   await a.click('#xCancel');
   await a.waitForTimeout(300);
+
+  // 월별 합계: 이번 달 3건 (6월 것은 빠짐), 지난달로 넘기면 0건, 6월로 가면 1건
+  await a.click('[data-view="month"]');
+  await a.waitForSelector('#monthView .tile');
+  await a.waitForTimeout(800);
+  const tiles = await a.$$eval('#monthView .tile b', (els) => els.map((e) => e.textContent));
+  console.log('이번 달 타일:', tiles.join(' / '));
+  assert.deepEqual(tiles, ['2', '1', '0', '1']); // 락스(주문완료) + 물티슈(요청). 종량제는 지웠다
+  const rowsM = await a.$$eval('#monthView .rows:nth-of-type(1) .rrow, #monthView h3 + .rows .rrow', (els) => els.map((e) => e.textContent));
+  console.log('품목별:', rowsM.join(' | '));
+  assert.ok(rowsM.some((t) => /락스 4L\s*1번\s*2통/.test(t)), '품목별에 락스 4L 1번 2통');
+  await a.screenshot({ path: path.join(OUT, '12_month.png'), fullPage: true });
+  for (let i = 0; i < 5; i++) { await a.click('[data-mon="-1"]'); }
+  assert.match(await a.textContent('#monthView .mnav b'), /2026년 6월/);
+  assert.match(await a.textContent('#monthView'), /옛날 락스/);
+  assert.match(await a.textContent('#monthView'), /3통/);
+  // 6월 엑셀 → 기간이 '직접'(6/1~6/30)로 열리고 1건, 두 번째 시트에 품목별 합계
+  await a.click('#mXlsxGo');
+  await a.waitForFunction(() => /1건/.test(document.querySelector('#xGo').textContent));
+  assert.equal(await a.inputValue('#xFrom'), '2026-06-01'); assert.equal(await a.inputValue('#xTo'), '2026-06-30');
+  const [dl2] = await Promise.all([a.waitForEvent('download'), a.click('#xGo')]);
+  const x2 = path.join(OUT, 'export_june.xlsx'); await dl2.saveAs(x2);
+  console.log('파일 이름:', dl2.suggestedFilename());
+  const py2 = require('child_process').execFileSync('python3', ['-c', `
+import openpyxl, json, sys
+wb = openpyxl.load_workbook(sys.argv[1])
+print(json.dumps({n: [[c.value for c in r] for r in wb[n].iter_rows()] for n in wb.sheetnames}, ensure_ascii=False, default=str))
+`, x2]).toString();
+  const wb2 = JSON.parse(py2);
+  console.log(JSON.stringify(wb2['품목별 합계']));
+  assert.deepEqual(Object.keys(wb2), ['목록', '품목별 합계']);
+  assert.equal(wb2['목록'].length, 2);
+  assert.deepEqual(wb2['품목별 합계'][1].slice(0, 6), ['옛날 락스', 1, '3통', 0, 0, 1]);
+  await a.click('#xCancel');
+  await a.waitForTimeout(300);
+  // 날짜 누르면 그날 목록으로
+  for (let i = 0; i < 5; i++) { await a.click('[data-mon="1"]'); }
+  await a.click('#monthView [data-day]');
+  await a.waitForTimeout(400);
+  assert.equal(await a.isVisible('#items'), true);
+  assert.equal(await a.getAttribute('[data-view="list"]', 'aria-pressed'), 'true');
 
   // 설정 메뉴
   await a.click('#menuBtn');
