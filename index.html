@@ -634,7 +634,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   // 이 화면이 기대하는 서버 코드 버전 (Code.gs 의 SERVER_VERSION). 서버가 이것보다 옛 것이면 맨 위에 안내.
   var SERVER_LATEST = '2026-11-17';
   // 이 화면(index.html) 버전 — 고칠 때마다 올린다. ⋮ 메뉴 맨 아래에 보인다 (옛 화면이 남아 있는지 확인용)
-  var APP_VERSION = '2026-11-17d';
+  var APP_VERSION = '2026-11-17e';
   // 서버 코드가 최신인지 응답 모양으로 판단 (version 이 없던 옛 서버용)
   //   최신(13열): 기록에 addr·img, 수취인에 grp·addr / 어제(11열): rcv 는 있고 addr 없음 / 그 전(9열): rcv 없음
   function serverVersion(r) {
@@ -1622,6 +1622,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var put = function (r, c, x) { (sh.cells[r] = sh.cells[r] || {})[c] = x; };
     // 2026-11-17 사용자 요청: 링크를 맨 오른쪽으로 (현장명 | 품목 | 수량 | 수취인 정보 | 링크)
     var HEADS = ['현장명', '품목', '수량', '수취인 정보', '링크'], W = [18, 26, 8, 24, 60];
+    // 쿠팡은 밖에서 상품 주소로 바로 들어오면 '사용권한이 없습니다'로 막는다. 첫 화면을 한 번 열면 통과 (2026-11-17 사용자 확인)
+    put(1, 2, { s: '※ 링크가 "요청하신 페이지의 사용권한이 없습니다"로 막히면, 같은 브라우저에서 www.coupang.com 을 먼저 한 번 연 뒤 다시 누르세요. (쿠팡 앱 공유 링크는 바로 열려요)' });
     gnames.forEach(function (g, gi) {
       var c0 = 2 + gi * 6; // B, H, N, T, …
       put(2, c0, { st: 9, s: g });
