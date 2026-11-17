@@ -340,7 +340,8 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
   const os3 = JSON.parse(py3);
   console.log('발주서:', JSON.stringify(os3));
   assert.deepEqual(['B4', 'C4', 'D4', 'E4', 'F4'].map((k) => os3.cells[k]), ['현장명', '품목', '수량', '수취인 정보', '링크']);
-  assert.match(os3.cells.B1, /www\.coupang\.com 을 먼저 한 번 연 뒤/);
+  assert.match(os3.cells.B1, /^안내 +엑셀에서 쿠팡 링크를 누르면[\s\S]*인터넷 주소창에 붙여넣어 주시면 정상적으로 열립니다\.$/);
+  assert.ok(os3.merged.includes('B1:F1'), '안내 띠는 표 전체 너비: ' + os3.merged.join(','));
   // 발주서 링크 칸: 상품 링크만, 주소 그대로 + 하이퍼링크
   const prodLinkCell = Object.keys(os3.cells).find((k) => os3.cells[k] === 'https://link.coupang.com/a/bXyZ12');
   assert.ok(prodLinkCell, '발주서에 상품 주소 그대로');
