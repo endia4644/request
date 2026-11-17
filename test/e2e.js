@@ -100,6 +100,17 @@ require('fs').mkdirSync(OUT, { recursive: true });
   await a.screenshot({ path: path.join(OUT, '10_paste_form.png') });
   await a.click('#addCancel');
 
+  // 쿠팡 추적 꼬리가 붙은 주소는 깨끗하게 저장 (꼬리 붙은 주소는 쿠팡이 막는다)
+  await a.click('#fName'); await a.fill('#fName', '위생백');
+  await a.fill('#fLink', 'https://www.coupang.com/vp/products/25828?itemId=111&vendorItemId=222&src=1191000&spec=10999999&addtag=400&lptag=CFM1&itime=2026');
+  await a.click('#addBtn');
+  await a.waitForFunction(() => document.querySelectorAll('.item:not(.pending)').length === 3, null, { timeout: 10000 });
+  const shC = await (await fetch(`http://localhost:${port}/__sheet`)).json();
+  assert.equal(shC.find((r) => r[2] === '위생백')[3], '=HYPERLINK("https://www.coupang.com/vp/products/25828?itemId=111&vendorItemId=222","쿠팡 상품")');
+  await a.click('.item:has-text("위생백") .nm'); await a.waitForTimeout(300);
+  a.once('dialog', (d) => d.accept());
+  await a.click('#eDel'); await a.waitForTimeout(800);
+
   // 상품 링크가 있는 물티슈는 사진을 가져와 카드에 보여준다
   await a.waitForSelector('.item:has-text("물티슈") img.thumb', { timeout: 10000 });
   assert.equal(await a.getAttribute('.item:has-text("물티슈") img.thumb', 'src'), 'http://localhost:8787/icon-180.png');

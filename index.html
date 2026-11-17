@@ -532,6 +532,20 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function coupangSearch(name) { return 'https://www.coupang.com/np/search?q=' + encodeURIComponent(String(name || '').trim()); }
   function extractUrl(t) { var m = String(t || '').match(/https?:\/\/[^\s"'<>]+/); return m ? m[0].replace(/[),.\]]+$/, '') : ''; }
+  // 쿠팡 상품 주소에서 추적용 꼬리(src·spec·addtag·ctag·lptag·itime…)를 떼고 상품번호·itemId·vendorItemId 만 남긴다.
+  // 꼬리가 붙은 주소는 쿠팡이 '요청하신 페이지의 사용권한이 없습니다'로 막았다 (2026-11-17 사용자 화면).
+  // 평소 발주서 링크 모양 = https://www.coupang.com/vp/products/번호?itemId=…&vendorItemId=…
+  function cleanLink(u) {
+    u = String(u || '').trim();
+    var m = u.match(/^https?:\/\/(?:www\.|m\.)?coupang\.com\/v[pm]\/products\/(\d+)/i);
+    if (!m) return u;
+    var q = (u.split('?')[1] || '').split('#')[0], keep = [];
+    ['itemId', 'vendorItemId'].forEach(function (k) {
+      var mm = q.match(new RegExp('(?:^|&)' + k + '=([^&]+)'));
+      if (mm) keep.push(k + '=' + mm[1]);
+    });
+    return 'https://www.coupang.com/vp/products/' + m[1] + (keep.length ? '?' + keep.join('&') : '');
+  }
   function cid() { return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
   // ── 서버 통신 ──────────────────────────────────────────────
@@ -619,6 +633,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
 
   // 이 화면이 기대하는 서버 코드 버전 (Code.gs 의 SERVER_VERSION). 서버가 이것보다 옛 것이면 맨 위에 안내.
   var SERVER_LATEST = '2026-11-17';
+  // 이 화면(index.html) 버전 — 고칠 때마다 올린다. ⋮ 메뉴 맨 아래에 보인다 (옛 화면이 남아 있는지 확인용)
+  var APP_VERSION = '2026-11-17c';
   // 서버 코드가 최신인지 응답 모양으로 판단 (version 이 없던 옛 서버용)
   //   최신(13열): 기록에 addr·img, 수취인에 grp·addr / 어제(11열): rcv 는 있고 addr 없음 / 그 전(9열): rcv 없음
   function serverVersion(r) {
@@ -1169,7 +1185,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   function pasteIntoForm() {
     return readClipLink().then(function (r) {
       expandForm(true);
-      $('fLink').value = r.url;
+      $('fLink').value = cleanLink(r.url);
       if (!$('fName').value.trim()) { var n = nameFromShare(r.text); if (n) $('fName').value = n; }
       updatePreview();
       toast('상품 링크를 넣었어요');
@@ -1183,8 +1199,9 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     if (!it) return Promise.resolve();
     return readClipLink().then(function (r) {
       var before = { link: it.link, custom: it.custom };
-      it.link = r.url; it.custom = true; render();
-      return write({ action: 'update', id: id, fields: { link: r.url } }, '상품 링크를 붙였어요 · 시트에도 반영')
+      var url = cleanLink(r.url);
+      it.link = url; it.custom = true; render();
+      return write({ action: 'update', id: id, fields: { link: url } }, '상품 링크를 붙였어요 · 시트에도 반영')
         .catch(function () { it.link = before.link; it.custom = before.custom; render(); });
     }).catch(function (e) {
       if (e && e.manual) { editItem(id); toast('쿠팡 상품 링크 칸에 길게 눌러 붙여넣어 주세요'); }
@@ -1207,7 +1224,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       (it.memo ? '<div class="memo">' + esc(it.memo) + '</div>' : '') +
       '<div class="acts">' +
       (it.custom
-        ? '<a class="cbtn" href="' + esc(it.link) + '" target="_blank" rel="noopener noreferrer">쿠팡 상품 ' + ARROW + '</a>'
+        ? '<a class="cbtn" href="' + esc(cleanLink(it.link)) + '" target="_blank" rel="noopener noreferrer">쿠팡 상품 ' + ARROW + '</a>'
         : '<button type="button" class="cbtn" data-cp="1">쿠팡에서 찾기 ' + ARROW + '</button>' +
           (it.pending ? '' : '<button type="button" class="linkbtn2" data-paste="1">링크 붙이기</button>')) +
       (it.pending ? '<span class="meta">저장 중…</span>' :
@@ -1279,7 +1296,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var name = $('fName').value.trim();
     if (!name) { $('fName').focus(); toast('필요한 물건을 적어주세요'); return; }
     var rawLink = $('fLink').value.trim();
-    var link = extractUrl(rawLink);
+    var link = cleanLink(extractUrl(rawLink));
     if (rawLink && !link) { toast('링크는 https:// 로 시작해야 해요'); $('fLink').focus(); return; }
     var site = $('fSite').value.trim();
     var rcv = $('fRcv').value.trim(), tel = phoneFmt($('fTel').value), addr = $('fAddr').value.trim();
@@ -1351,7 +1368,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           var f = {};
           var v = function (sel) { return root.querySelector(sel).value.trim(); };
           if (!v('#eName')) { toast('품명을 적어주세요'); return; }
-          var rawLink = v('#eLink'), link = extractUrl(rawLink);
+          var rawLink = v('#eLink'), link = cleanLink(extractUrl(rawLink));
           if (rawLink && !link) { toast('링크는 https:// 로 시작해야 해요'); return; }
           if (cur !== it.status) f.status = cur;
           if (v('#eName') !== it.name) f.name = v('#eName');
@@ -1566,7 +1583,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         { h: '상태', w: 10 }, { h: '등록자', w: 10 }, { h: '메모', w: 36 }, { h: '쿠팡 링크', w: 60 }],
       rows: items.map(function (it) {
         return [{ d: it.t }, { s: it.site }, { s: it.name }, { s: it.qty }, { s: it.rcv }, { s: it.tel }, { s: it.addr }, { s: it.status }, { s: it.by }, { s: it.memo },
-          { url: it.custom ? it.link : coupangSearch(it.name) }];
+          { url: it.custom ? cleanLink(it.link) : coupangSearch(it.name) }];
       }),
     };
     var sum = summarize(items);
@@ -1575,7 +1592,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       cols: [{ h: '품명', w: 28 }, { h: '요청 횟수', w: 11 }, { h: '수량 합계', w: 16 }, { h: '요청', w: 8 }, { h: '주문완료', w: 10 }, { h: '입고완료', w: 10 }, { h: '쿠팡 링크', w: 60 }],
       rows: sum.names.map(function (g) {
         return [{ s: g.name }, { n: g.count }, { s: qtyJoin(g.units) }, { n: g.req }, { n: g.ord }, { n: g.done },
-          { url: g.link || coupangSearch(g.name) }];
+          { url: g.link ? cleanLink(g.link) : coupangSearch(g.name) }];
       }),
     };
     return buildWorkbook([orderSheet(items, sheetName), list, total]);
@@ -1619,7 +1636,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         its.forEach(function (it) {
           put(r, c0, { st: 6 });
           put(r, c0 + 1, { st: 7, s: it.name });
-          put(r, c0 + 2, { st: 8, url: it.custom ? it.link : '' }); // 상품 링크만, 주소 그대로 (평소 발주서처럼)
+          put(r, c0 + 2, { st: 8, url: it.custom ? cleanLink(it.link) : '' }); // 상품 링크만, 주소 그대로 (평소 발주서처럼)
           put(r, c0 + 3, { st: 6, s: it.qty });
           put(r, c0 + 4, { st: 6 });
           r++;
@@ -1774,6 +1791,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       '<button class="linkbtn" id="mXlsx">엑셀로 내보내기<small>기간·상태·현장을 골라 .xlsx 파일로 받아요</small></button>' +
       '<button class="linkbtn" id="mRefresh">지금 새로고침<small>' + esc(state.err ? '오류: ' + state.err : '기록은 15초마다, 근무자 명단은 5분마다 저절로 읽어요. 누르면 둘 다 지금 읽어요') + '</small></button>' +
       '<div class="linkbtn" style="cursor:default">서버 코드<small>' + esc(serverLabel()) + '</small>' +
+      '<small>앱 화면 ' + APP_VERSION + '</small>' +
       (GAS ? '' : '<small style="word-break:break-all">' + esc(cfg.u || '') + '</small>') + '</div>' +
       (GAS ? '' : '<button class="linkbtn" id="mServer">서버 주소 바꾸기<small>Apps Script에서 "새 배포"를 해서 주소가 바뀌었을 때 (팀 코드는 그대로)</small></button>') +
       '<button class="linkbtn danger" id="mReset">연결 끊기<small>이 휴대폰에서만 연결 정보를 지워요</small></button>',
@@ -2205,6 +2223,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var el = this;
     setTimeout(function () {
       var raw = el.value, u = extractUrl(raw);
+      if (u) u = cleanLink(u);
       if (u && u !== raw.trim()) {
         if (!$('fName').value.trim()) { var n = nameFromShare(raw); if (n) $('fName').value = n; }
         el.value = u; updatePreview();
@@ -2217,7 +2236,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     if (p.kind === 'item') pasteIntoItem(p.id); else pasteIntoForm();
   };
   $('pasteX').onclick = function () { hidePasteBar(); pending = null; };
-  $('fLink').addEventListener('blur', function () { var u = extractUrl(this.value); if (u) this.value = u; updatePreview(); });
+  $('fLink').addEventListener('blur', function () { var u = cleanLink(extractUrl(this.value)); if (u) this.value = u; updatePreview(); });
 
   $('tabs').addEventListener('click', function (e) {
     var b = e.target.closest('[data-tab]'); if (!b) return;
