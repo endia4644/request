@@ -175,16 +175,22 @@ import openpyxl, json, sys
 ws = openpyxl.load_workbook(sys.argv[1])['목록']
 print(json.dumps([[c.value if not hasattr(c.value, 'isoformat') else c.value.isoformat() for c in r] for r in ws.iter_rows()], ensure_ascii=False))
 print(ws.freeze_panes, ws.auto_filter.ref, ws['A2'].number_format)
+print(json.dumps([[c.coordinate, c.hyperlink.target if c.hyperlink else None] for c in ws['K'][1:]]))
 `, xfile]).toString().trim().split('\n');
   console.log(py.join('\n'));
   const rows = JSON.parse(py[0]);
-  assert.deepEqual(rows[0], ['등록일시', '현장', '품명', '수량', '수취인', '연락처', '주소', '상태', '등록자', '메모', '쿠팡']);
+  assert.deepEqual(rows[0], ['등록일시', '현장', '품명', '수량', '수취인', '연락처', '주소', '상태', '등록자', '메모', '쿠팡 링크']);
   assert.equal(rows.length, 4);
   assert.equal(rows[1][2], '옛날 락스'); // 오래된 것부터
   assert.equal(rows[1][0], '2026-06-03T09:05:00');
   assert.equal(rows[1][9], '메모 <&> "따옴표"');
-  assert.match(rows[1][10], /^=HYPERLINK\("https:\/\/www\.coupang\.com\/np\/search\?q=/);
-  assert.ok(rows.some((r) => r[10] === '=HYPERLINK("https://link.coupang.com/a/bXyZ12","쿠팡 상품")'));
+  // 쿠팡 링크 = 주소 글자 그대로 + 진짜 하이퍼링크 (수식 아님)
+  assert.match(rows[1][10], /^https:\/\/www\.coupang\.com\/np\/search\?q=/);
+  assert.ok(rows.some((r) => r[10] === 'https://link.coupang.com/a/bXyZ12'));
+  assert.ok(!rows.some((r) => String(r[10] || '').startsWith('=')), '수식이 없어야 한다');
+  const links = JSON.parse(py[2]);
+  assert.ok(links.every((l) => l[1] && /^https:\/\//.test(l[1])), '모든 쿠팡 칸이 하이퍼링크: ' + JSON.stringify(links));
+  assert.ok(links.some((l) => l[1] === 'https://link.coupang.com/a/bXyZ12'));
   assert.equal(py[1], 'A2 A1:K4 yyyy-mm-dd hh:mm');
   await a.click('#xCancel');
   await a.waitForTimeout(300);
@@ -318,11 +324,16 @@ print(json.dumps({n: [[c.value for c in r] for r in wb[n].iter_rows()] for n in 
 import openpyxl, json, sys
 ws = openpyxl.load_workbook(sys.argv[1]).worksheets[0]
 assert ws.title == '11월', ws.title
-print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c in r if c.value is not None}, 'merged': sorted(str(m) for m in ws.merged_cells.ranges)}, ensure_ascii=False))
+print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c in r if c.value is not None}, 'merged': sorted(str(m) for m in ws.merged_cells.ranges), 'links': {c.coordinate: c.hyperlink.target for r in ws.iter_rows() for c in r if c.hyperlink}}, ensure_ascii=False))
 `, x3]).toString();
   const os3 = JSON.parse(py3);
   console.log('발주서:', JSON.stringify(os3));
   assert.equal(os3.cells.B4, '현장명'); assert.equal(os3.cells.F4, '수취인 정보');
+  // 발주서 링크 칸: 상품 링크만, 주소 그대로 + 하이퍼링크
+  const prodLinkCell = Object.keys(os3.cells).find((k) => os3.cells[k] === 'https://link.coupang.com/a/bXyZ12');
+  assert.ok(prodLinkCell, '발주서에 상품 주소 그대로');
+  assert.equal(os3.links[prodLinkCell], 'https://link.coupang.com/a/bXyZ12');
+  assert.ok(!Object.values(os3.cells).some((v) => String(v).startsWith('=HYPERLINK')));
   assert.ok(Object.values(os3.cells).includes('홍길동\n010-5555-6666\n서울시 ○○구 ○○로 7'));
   await a.click('#xCancel');
 

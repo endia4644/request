@@ -1419,15 +1419,24 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   function colName(i) { var s = ''; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; } // 0→A, 26→AA
 
   // 엑셀 파일 만들기. sheets: [{name, cols:[{h,w}], rows:[[칸]]}]
-  // 칸: {s:글자} | {n:숫자} | {d:밀리초(날짜시각)} | {link, label}
+  // 칸: {s:글자} | {n:숫자} | {d:밀리초(날짜시각)} | {url:주소}
+  // url 칸 = 주소를 글자 그대로 + 엑셀 진짜 하이퍼링크(수식 아님). HYPERLINK() 수식은 엑셀 앱·미리보기에서
+  // 눌러도 안 열려서 바꿨다 (2026-11-17 사용자: "엑셀 열어보니 실제 접속이 안 돼").
   function buildWorkbook(sheets) {
+    var curLinks = []; // 지금 만드는 시트의 하이퍼링크 [{ref, url}]
+    function urlCell(ref, url, st) {
+      if (!url) return st ? '<c r="' + ref + '" s="' + st + '"/>' : '';
+      curLinks.push({ ref: ref, url: url });
+      return '<c r="' + ref + '" s="' + (st || 3) + '" t="inlineStr"><is><t xml:space="preserve">' + xesc(url) + '</t></is></c>';
+    }
+    function linksXml() {
+      if (!curLinks.length) return '';
+      return '<hyperlinks>' + curLinks.map(function (l, i) { return '<hyperlink ref="' + l.ref + '" r:id="rIdL' + (i + 1) + '"/>'; }).join('') + '</hyperlinks>';
+    }
     function cell(ref, x) {
       if (!x) return '';
+      if ('url' in x) return urlCell(ref, x.url, x.st);
       if (x.st) { // 발주서 시트: 스타일 번호를 직접 지정 (테두리 등)
-        if (x.link) {
-          var q0 = function (s) { return xesc(String(s).replace(/"/g, '""')); };
-          return '<c r="' + ref + '" s="' + x.st + '" t="str"><f>HYPERLINK("' + q0(x.link) + '","' + q0(x.label) + '")</f><v>' + xesc(x.label) + '</v></c>';
-        }
         if (x.s == null || x.s === '') return '<c r="' + ref + '" s="' + x.st + '"/>';
         return '<c r="' + ref + '" s="' + x.st + '" t="inlineStr"><is><t xml:space="preserve">' + xesc(x.s) + '</t></is></c>';
       }
@@ -1436,16 +1445,13 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         var local = Math.round((x.d - new Date(x.d).getTimezoneOffset() * 60000) / 1000);
         return '<c r="' + ref + '" s="2"><v>' + (local / 86400 + 25569) + '</v></c>';
       }
-      if (x.link) {
-        var q = function (s) { return xesc(String(s).replace(/"/g, '""')); };
-        return '<c r="' + ref + '" s="3" t="str"><f>HYPERLINK("' + q(x.link) + '","' + q(x.label) + '")</f><v>' + xesc(x.label) + '</v></c>';
-      }
       if (typeof x.n === 'number') return '<c r="' + ref + '" s="5"><v>' + x.n + '</v></c>';
       if (!x.s) return '';
       return '<c r="' + ref + '" s="4" t="inlineStr"><is><t xml:space="preserve">' + xesc(x.s) + '</t></is></c>';
     }
     // 자유 배치 시트: sh.cells = {행: {열: 칸}}, sh.merges = ['B5:B9'], sh.widths = {열: 너비}
     function gridXml(sh) {
+      curLinks = [];
       var rows = Object.keys(sh.cells).map(Number).sort(function (a, b) { return a - b; });
       var maxC = 1;
       var body = rows.map(function (r) {
@@ -1462,10 +1468,12 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         (widths.length ? '<cols>' + widths.map(function (c) { return '<col min="' + c + '" max="' + c + '" width="' + sh.widths[c] + '" customWidth="1"/>'; }).join('') + '</cols>' : '') +
         '<sheetData>' + body + '</sheetData>' +
         (sh.merges && sh.merges.length ? '<mergeCells count="' + sh.merges.length + '">' + sh.merges.map(function (m) { return '<mergeCell ref="' + m + '"/>'; }).join('') + '</mergeCells>' : '') +
+        linksXml() + (sh.links = curLinks, '') +
         '</worksheet>';
     }
     function sheetXml(sh) {
       if (sh.cells) return gridXml(sh);
+      curLinks = [];
       var last = colName(sh.cols.length - 1), n = sh.rows.length + 1;
       var rows = ['<row r="1">' + sh.cols.map(function (c, i) {
         return '<c r="' + colName(i) + '1" s="1" t="inlineStr"><is><t>' + xesc(c.h) + '</t></is></c>';
@@ -1483,6 +1491,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         '<cols>' + sh.cols.map(function (c, i) { return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + c.w + '" customWidth="1"/>'; }).join('') + '</cols>' +
         '<sheetData>' + rows.join('') + '</sheetData>' +
         '<autoFilter ref="' + sh.ref + '"/>' +
+        linksXml() + (sh.links = curLinks, '') +
         '</worksheet>';
     }
     var xmls = sheets.map(sheetXml);
@@ -1536,6 +1545,15 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         '</Relationships>' },
     ];
     xmls.forEach(function (x, i) { files.push({ name: 'xl/worksheets/sheet' + (i + 1) + '.xml', data: x }); });
+    // 시트마다 하이퍼링크 주소표 (외부 주소)
+    sheets.forEach(function (sh, i) {
+      if (!sh.links || !sh.links.length) return;
+      files.push({ name: 'xl/worksheets/_rels/sheet' + (i + 1) + '.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        sh.links.map(function (l, k) {
+          return '<Relationship Id="rIdL' + (k + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="' + xesc(l.url) + '" TargetMode="External"/>';
+        }).join('') + '</Relationships>' });
+    });
     files.push({ name: 'xl/styles.xml', data: styles });
     return zip(files);
   }
@@ -1545,19 +1563,19 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     var list = {
       name: '목록',
       cols: [{ h: '등록일시', w: 17 }, { h: '현장', w: 22 }, { h: '품명', w: 28 }, { h: '수량', w: 9 }, { h: '수취인', w: 10 }, { h: '연락처', w: 15 }, { h: '주소', w: 34 },
-        { h: '상태', w: 10 }, { h: '등록자', w: 10 }, { h: '메모', w: 36 }, { h: '쿠팡', w: 13 }],
+        { h: '상태', w: 10 }, { h: '등록자', w: 10 }, { h: '메모', w: 36 }, { h: '쿠팡 링크', w: 60 }],
       rows: items.map(function (it) {
         return [{ d: it.t }, { s: it.site }, { s: it.name }, { s: it.qty }, { s: it.rcv }, { s: it.tel }, { s: it.addr }, { s: it.status }, { s: it.by }, { s: it.memo },
-          { link: it.link || coupangSearch(it.name), label: it.custom ? '쿠팡 상품' : '쿠팡에서 찾기' }];
+          { url: it.custom ? it.link : coupangSearch(it.name) }];
       }),
     };
     var sum = summarize(items);
     var total = {
       name: '품목별 합계',
-      cols: [{ h: '품명', w: 28 }, { h: '요청 횟수', w: 11 }, { h: '수량 합계', w: 16 }, { h: '요청', w: 8 }, { h: '주문완료', w: 10 }, { h: '입고완료', w: 10 }, { h: '쿠팡', w: 13 }],
+      cols: [{ h: '품명', w: 28 }, { h: '요청 횟수', w: 11 }, { h: '수량 합계', w: 16 }, { h: '요청', w: 8 }, { h: '주문완료', w: 10 }, { h: '입고완료', w: 10 }, { h: '쿠팡 링크', w: 60 }],
       rows: sum.names.map(function (g) {
         return [{ s: g.name }, { n: g.count }, { s: qtyJoin(g.units) }, { n: g.req }, { n: g.ord }, { n: g.done },
-          { link: g.link || coupangSearch(g.name), label: g.link ? '쿠팡 상품' : '쿠팡에서 찾기' }];
+          { url: g.link || coupangSearch(g.name) }];
       }),
     };
     return buildWorkbook([orderSheet(items, sheetName), list, total]);
@@ -1585,7 +1603,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     });
     var sh = { name: sheetName || '발주서', cells: {}, merges: [], widths: { 1: 2 }, heights: {} };
     var put = function (r, c, x) { (sh.cells[r] = sh.cells[r] || {})[c] = x; };
-    var HEADS = ['현장명', '품목', '링크', '수량', '수취인 정보'], W = [18, 26, 12, 8, 24];
+    var HEADS = ['현장명', '품목', '링크', '수량', '수취인 정보'], W = [18, 26, 34, 8, 24];
     gnames.forEach(function (g, gi) {
       var c0 = 2 + gi * 6; // B, H, N, T, …
       put(2, c0, { st: 9, s: g });
@@ -1601,7 +1619,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         its.forEach(function (it) {
           put(r, c0, { st: 6 });
           put(r, c0 + 1, { st: 7, s: it.name });
-          put(r, c0 + 2, it.custom ? { st: 8, link: it.link, label: '쿠팡 상품' } : { st: 7 });
+          put(r, c0 + 2, { st: 8, url: it.custom ? it.link : '' }); // 상품 링크만, 주소 그대로 (평소 발주서처럼)
           put(r, c0 + 3, { st: 6, s: it.qty });
           put(r, c0 + 4, { st: 6 });
           r++;
