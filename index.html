@@ -634,7 +634,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   // 이 화면이 기대하는 서버 코드 버전 (Code.gs 의 SERVER_VERSION). 서버가 이것보다 옛 것이면 맨 위에 안내.
   var SERVER_LATEST = '2026-11-17';
   // 이 화면(index.html) 버전 — 고칠 때마다 올린다. ⋮ 메뉴 맨 아래에 보인다 (옛 화면이 남아 있는지 확인용)
-  var APP_VERSION = '2026-11-17g';
+  var APP_VERSION = '2026-11-17h';
   // 서버 코드가 최신인지 응답 모양으로 판단 (version 이 없던 옛 서버용)
   //   최신(13열): 기록에 addr·img, 수취인에 grp·addr / 어제(11열): rcv 는 있고 addr 없음 / 그 전(9열): rcv 없음
   function serverVersion(r) {
@@ -1441,9 +1441,11 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   // 눌러도 안 열려서 바꿨다 (2026-11-17 사용자: "엑셀 열어보니 실제 접속이 안 돼").
   function buildWorkbook(sheets) {
     var curLinks = []; // 지금 만드는 시트의 하이퍼링크 [{ref, url}]
+    // 쿠팡 주소는 링크 대상만 go.html 중간 페이지로 (엑셀이 먼저 열어 보는 걸 쿠팡이 막아서). 보이는 글자는 쿠팡 주소 그대로.
+    var GO = 'https://endia4644.github.io/request/go.html?u=';
     function urlCell(ref, url, st) {
       if (!url) return st ? '<c r="' + ref + '" s="' + st + '"/>' : '';
-      curLinks.push({ ref: ref, url: url });
+      curLinks.push({ ref: ref, url: /^https:\/\/([a-z0-9-]+\.)*coupang\.com(\/|$)/i.test(url) ? GO + encodeURIComponent(url) : url });
       var shown = url; try { shown = decodeURIComponent(url); } catch (e) {} // 검색 주소의 %EB… 는 한글로 (누르면 원래 주소)
       return '<c r="' + ref + '" s="' + (st || 3) + '" t="inlineStr"><is><t xml:space="preserve">' + xesc(shown) + '</t></is></c>';
     }
@@ -1631,7 +1633,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     // 쿠팡은 밖에서 상품 주소로 바로 들어오면 '사용권한이 없습니다'로 막는다. 첫 화면을 한 번 열면 통과 (2026-11-17 사용자 확인)
     // 맨 위 안내 띠: 엑셀은 링크를 브라우저에 넘기기 전에 스스로 먼저 열어 보는데, 쿠팡이 그 접속을 막는다.
     // 주소를 복사해 브라우저 주소창에 붙여넣으면 열린다 (2026-11-17 사용자 화면으로 확인). 아래 묶음 수가 정해진 뒤 전체 너비로 합친다.
-    var NOTE = '안내   엑셀에서 쿠팡 링크를 누르면 쿠팡 보안 정책 때문에 열리지 않을 수 있습니다. 링크 주소를 복사하여 인터넷 주소창에 붙여넣어 주시면 정상적으로 열립니다.';
+    var NOTE = '안내   쿠팡 링크를 누르면 잠시 안내 페이지를 거쳐 쿠팡으로 이동합니다. 열리지 않을 때는 링크 주소를 복사하여 인터넷 주소창에 붙여넣어 주세요.';
     var lastC = 2 + (Math.max(gnames.length, 1) - 1) * 6 + 4; // 마지막 묶음의 '링크' 열 (1부터)
     for (var nc = 2; nc <= lastC; nc++) put(1, nc, { st: 10, s: nc === 2 ? NOTE : '' });
     sh.merges.push('B1:' + colName(lastC - 1) + '1');

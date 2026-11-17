@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>쿠팡으로 이동</title>
+<!--
+  엑셀 링크용 중간 페이지 (2026-11-17).
+  엑셀(Office)은 링크를 브라우저에 넘기기 전에 스스로 먼저 열어 보는데, 쿠팡은 그 접속을 막는다.
+  엑셀 링크를 이 페이지(go.html?u=쿠팡주소)로 걸면 엑셀이 먼저 보는 건 이 정적 페이지이고,
+  실제 쿠팡 접속은 브라우저가 여기서 직접 한다 → 막히지 않는다. 컴퓨터마다 설정할 필요 없음.
+  아무 주소로나 보내는 데 쓰이지 않게 쿠팡 주소만 받는다.
+-->
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f5f7; color: #111827;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  .box { text-align: center; padding: 24px; max-width: 420px; }
+  a { display: inline-block; margin-top: 14px; padding: 12px 20px; border-radius: 12px; background: #e52528; color: #fff;
+    text-decoration: none; font-weight: 700; }
+  p { color: #6b7280; margin: 6px 0 0; font-size: 13px; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="box">
+  <b id="msg">쿠팡으로 이동하는 중…</b>
+  <p id="url"></p>
+  <a id="go" href="https://www.coupang.com/" hidden>쿠팡 열기</a>
+</div>
+<script>
+(function () {
+  var u = new URLSearchParams(location.search).get('u') || '';
+  var ok = /^https:\/\/([a-z0-9-]+\.)*coupang\.com(\/|$)/i.test(u);
+  var a = document.getElementById('go');
+  if (!ok) {
+    document.getElementById('msg').textContent = '쿠팡 주소가 아니에요';
+    a.hidden = false;
+    return;
+  }
+  document.getElementById('url').textContent = u;
+  a.href = u; a.hidden = false;
+  location.replace(u);
+})();
+</script>
+</body>
+</html>

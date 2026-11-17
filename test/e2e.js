@@ -200,8 +200,8 @@ print(json.dumps([[c.coordinate, c.hyperlink.target if c.hyperlink else None] fo
   assert.ok(rows.some((r) => r[10] === 'https://link.coupang.com/a/bXyZ12'));
   assert.ok(!rows.some((r) => String(r[10] || '').startsWith('=')), '수식이 없어야 한다');
   const links = JSON.parse(py[2]);
-  assert.ok(links.every((l) => l[1] && /^https:\/\//.test(l[1])), '모든 쿠팡 칸이 하이퍼링크: ' + JSON.stringify(links));
-  assert.ok(links.some((l) => l[1] === 'https://link.coupang.com/a/bXyZ12'));
+  assert.ok(links.every((l) => l[1] && /^https:\/\/endia4644\.github\.io\/request\/go\.html\?u=https%3A%2F%2F/.test(l[1])), '쿠팡 링크는 go.html 경유: ' + JSON.stringify(links));
+  assert.ok(links.some((l) => l[1] === 'https://endia4644.github.io/request/go.html?u=' + encodeURIComponent('https://link.coupang.com/a/bXyZ12')));
   assert.equal(py[1], 'A2 A1:K4 yyyy-mm-dd hh:mm');
   await a.click('#xCancel');
   await a.waitForTimeout(300);
@@ -340,12 +340,24 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
   const os3 = JSON.parse(py3);
   console.log('발주서:', JSON.stringify(os3));
   assert.deepEqual(['B4', 'C4', 'D4', 'E4', 'F4'].map((k) => os3.cells[k]), ['현장명', '품목', '수량', '수취인 정보', '링크']);
-  assert.match(os3.cells.B1, /^안내 +엑셀에서 쿠팡 링크를 누르면[\s\S]*인터넷 주소창에 붙여넣어 주시면 정상적으로 열립니다\.$/);
+  assert.match(os3.cells.B1, /^안내 +쿠팡 링크를 누르면 잠시 안내 페이지를 거쳐[\s\S]*붙여넣어 주세요\.$/);
+  // go.html: 쿠팡 주소만 넘기고, 다른 주소는 거절
+  {
+    const gp = await (await b.newContext()).newPage();
+    await gp.route('https://link.coupang.com/**', (r) => r.fulfill({ status: 200, body: 'COUPANG_OK' }));
+    await gp.goto('http://localhost:8787/go.html?u=' + encodeURIComponent('https://link.coupang.com/a/bXyZ12'));
+    await gp.waitForURL('https://link.coupang.com/a/bXyZ12');
+    await gp.goto('http://localhost:8787/go.html?u=' + encodeURIComponent('https://evil.example/x'));
+    assert.equal(await gp.textContent('#msg'), '쿠팡 주소가 아니에요');
+    await gp.goto('http://localhost:8787/go.html?u=' + encodeURIComponent('https://coupang.com.evil.example/x'));
+    assert.equal(await gp.textContent('#msg'), '쿠팡 주소가 아니에요');
+    await gp.context().close();
+  }
   assert.ok(os3.merged.includes('B1:F1'), '안내 띠는 표 전체 너비: ' + os3.merged.join(','));
   // 발주서 링크 칸: 상품 링크만, 주소 그대로 + 하이퍼링크
   const prodLinkCell = Object.keys(os3.cells).find((k) => os3.cells[k] === 'https://link.coupang.com/a/bXyZ12');
   assert.ok(prodLinkCell, '발주서에 상품 주소 그대로');
-  assert.equal(os3.links[prodLinkCell], 'https://link.coupang.com/a/bXyZ12');
+  assert.equal(os3.links[prodLinkCell], 'https://endia4644.github.io/request/go.html?u=' + encodeURIComponent('https://link.coupang.com/a/bXyZ12'));
   assert.ok(!Object.values(os3.cells).some((v) => String(v).startsWith('=HYPERLINK')));
   assert.ok(Object.values(os3.cells).includes('홍길동\n010-5555-6666\n서울시 ○○구 ○○로 7'));
   await a.click('#xCancel');
