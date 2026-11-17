@@ -15,6 +15,10 @@
  * 검증: node test/test.js   (아래 함수들을 가짜 시트로 돌린다)
  */
 
+// 서버 코드 버전 — 고칠 때마다 올린다. 브라우저로 <웹 앱 주소>?action=version 을 열면 팀 코드 없이 이 값이 보인다.
+// 앱(index.html)의 SERVER_LATEST 와 같으면 최신.
+const SERVER_VERSION = '2026-11-17';
+
 const CFG = {
   SHEET: '청소용품',
   // 앱 주소 (GitHub Pages). 비워두면 '연결 링크'를 웹 앱 주소로만 만든다.
@@ -94,6 +98,7 @@ function json_(obj) {
 
 function handle_(req) {
   try {
+    if (req.action === 'version') return { ok: true, version: SERVER_VERSION }; // 팀 코드 없이 (배포 확인용)
     if (req.action === 'init') return withLock_(() => init_(req));
     const key = PropertiesService.getScriptProperties().getProperty('TEAM_KEY');
     if (!key) return { ok: false, error: '아직 설치가 안 끝났어요. 앱의 [처음 설치] 화면에서 이 주소를 넣어주세요', code: 'NOINIT' };
@@ -103,6 +108,7 @@ function handle_(req) {
       case 'info': return { ok: true, sheetUrl: ss_().getUrl() };
       case 'list': {
         const r = listItems_(String(req.all || '') === '1');
+        r.version = SERVER_VERSION;
         if (String(req.contacts || '') === '1') r.contacts = readContacts_();
         return r;
       }

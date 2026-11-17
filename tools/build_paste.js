@@ -12,6 +12,8 @@ const src = path.join(root, 'Code.gs');
 const out = path.join(root, 'Code.paste.gs');
 const opts = ['--format', 'beautify=true,comments=false,semicolons=true,indent_level=0,quote_style=1,max_line_len=false'];
 const code = execFileSync('npx', ['-y', 'terser@5.31.0', src, ...opts], { encoding: 'utf8', maxBuffer: 1 << 26 });
-const head = '/* 청소용품 요청 서버 (붙여넣기용: 주석을 뺀 Code.gs). 원본 https://github.com/endia4644/request */\n';
+const ver = (fs.readFileSync(src, 'utf8').match(/SERVER_VERSION = '([^']+)'/) || [])[1] || '?';
+// 첫 줄에 버전 — 편집기 맨 위만 봐도 어떤 코드인지 알 수 있게
+const head = '/* 청소용품 요청 서버 버전 ' + ver + ' (붙여넣기용: 주석을 뺀 Code.gs). 원본 https://github.com/endia4644/request */\n';
 fs.writeFileSync(out, head + code);
 console.log('Code.paste.gs', code.split('\n').length, '줄');

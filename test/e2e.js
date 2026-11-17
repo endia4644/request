@@ -329,7 +329,7 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
   // 설정 메뉴
   await a.click('#menuBtn');
   await a.waitForTimeout(400);
-  assert.match(await a.textContent('#sheetBody'), /서버 코드\s*✅ 최신/);
+  assert.match(await a.textContent('#sheetBody'), /서버 코드\s*✅ 최신 \d{4}-\d\d-\d\d/);
   // 서버 주소 바꾸기: 같은 서버(팀 코드 맞음) 주소면 바뀐다
   await a.click('#mServer');
   await a.fill('#svUrl', 'http://localhost:8787/api?x=1');
@@ -346,7 +346,7 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
   {
     const oldSrv = require('./serve').start(8789);
     const realHandle = oldSrv.env.ctx.handle_;
-    oldSrv.env.ctx.handle_ = (req) => (req.action === 'thumb' ? { ok: false, error: '알 수 없는 요청: thumb' } : realHandle(req));
+    oldSrv.env.ctx.handle_ = (req) => (req.action === 'thumb' || req.action === 'version' ? { ok: false, error: '알 수 없는 요청: ' + req.action } : (() => { const r = realHandle(req); delete r.version; return r; })());
     const octx = await b.newContext(phone);
     const op = await octx.newPage();
     await op.goto(`http://localhost:8789/`);
@@ -357,6 +357,7 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
     await op.reload();
     await op.waitForSelector('#diagBox:not([hidden])', { timeout: 10000 });
     assert.match(await op.textContent('#diagBox'), /서버 코드가 아직 옛 버전/);
+    assert.match(await op.textContent('#diagBox'), /지금 서버: 버전 표시 없음[\s\S]*필요한 버전: \d{4}-\d\d-\d\d/);
     await op.screenshot({ path: path.join(OUT, '16_old_server.png') });
     await octx.close(); oldSrv.server.close();
   }

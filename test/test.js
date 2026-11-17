@@ -23,9 +23,14 @@ t('팀 코드가 틀리면 막는다', () => {
   assert.equal(r.ok, false); assert.equal(r.code, 'KEY');
 });
 
+t('버전은 팀 코드 없이 보인다 (배포 확인용), 목록에도 실린다', () => {
+  const v = JSON.parse(g.doGet({ parameter: { action: 'version' } }).content);
+  assert.equal(v.ok, true); assert.match(v.version, /^\d{4}-\d\d-\d\d/);
+});
+
 t('주소만 열면 앱 화면', () => assert.equal(g.doGet({ parameter: {} }).kind, 'html'));
 
-t('빈 목록', () => { const r = list(); assert.equal(r.ok, true); assert.deepEqual(r.items, []); assert.equal(typeof r.now, 'number'); });
+t('빈 목록', () => { const r = list(); assert.equal(r.ok, true); assert.deepEqual(r.items, []); assert.equal(typeof r.now, 'number'); assert.match(r.version, /^\d{4}/); });
 
 t('등록 → 품명 옆 칸에 쿠팡 검색 링크', () => {
   const r = post({ action: 'add', name: '락스 4L', qty: '2통', site: '○○빌딩', by: '김철수', memo: '향 없는 거' });

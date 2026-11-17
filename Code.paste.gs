@@ -1,4 +1,6 @@
-/* 청소용품 요청 서버 (붙여넣기용: 주석을 뺀 Code.gs). 원본 https://github.com/endia4644/request */
+/* 청소용품 요청 서버 버전 2026-11-17 (붙여넣기용: 주석을 뺀 Code.gs). 원본 https://github.com/endia4644/request */
+const SERVER_VERSION = '2026-11-17';
+
 const CFG = {
 SHEET: '청소용품',
 PAGE_URL: 'https://endia4644.github.io/request/',
@@ -111,6 +113,10 @@ return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentS
 
 function handle_(req) {
 try {
+if (req.action === 'version') return {
+ok: true,
+version: SERVER_VERSION
+};
 if (req.action === 'init') return withLock_((() => init_(req)));
 const key = PropertiesService.getScriptProperties().getProperty('TEAM_KEY');
 if (!key) return {
@@ -133,6 +139,7 @@ sheetUrl: ss_().getUrl()
 case 'list':
 {
 const r = listItems_(String(req.all || '') === '1');
+r.version = SERVER_VERSION;
 if (String(req.contacts || '') === '1') r.contacts = readContacts_();
 return r;
 }
