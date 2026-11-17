@@ -634,7 +634,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   // 이 화면이 기대하는 서버 코드 버전 (Code.gs 의 SERVER_VERSION). 서버가 이것보다 옛 것이면 맨 위에 안내.
   var SERVER_LATEST = '2026-11-17';
   // 이 화면(index.html) 버전 — 고칠 때마다 올린다. ⋮ 메뉴 맨 아래에 보인다 (옛 화면이 남아 있는지 확인용)
-  var APP_VERSION = '2026-11-17c';
+  var APP_VERSION = '2026-11-17d';
   // 서버 코드가 최신인지 응답 모양으로 판단 (version 이 없던 옛 서버용)
   //   최신(13열): 기록에 addr·img, 수취인에 grp·addr / 어제(11열): rcv 는 있고 addr 없음 / 그 전(9열): rcv 없음
   function serverVersion(r) {
@@ -1620,7 +1620,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     });
     var sh = { name: sheetName || '발주서', cells: {}, merges: [], widths: { 1: 2 }, heights: {} };
     var put = function (r, c, x) { (sh.cells[r] = sh.cells[r] || {})[c] = x; };
-    var HEADS = ['현장명', '품목', '링크', '수량', '수취인 정보'], W = [18, 26, 34, 8, 24];
+    // 2026-11-17 사용자 요청: 링크를 맨 오른쪽으로 (현장명 | 품목 | 수량 | 수취인 정보 | 링크)
+    var HEADS = ['현장명', '품목', '수량', '수취인 정보', '링크'], W = [18, 26, 8, 24, 60];
     gnames.forEach(function (g, gi) {
       var c0 = 2 + gi * 6; // B, H, N, T, …
       put(2, c0, { st: 9, s: g });
@@ -1636,17 +1637,17 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
         its.forEach(function (it) {
           put(r, c0, { st: 6 });
           put(r, c0 + 1, { st: 7, s: it.name });
-          put(r, c0 + 2, { st: 8, url: it.custom ? cleanLink(it.link) : '' }); // 상품 링크만, 주소 그대로 (평소 발주서처럼)
-          put(r, c0 + 3, { st: 6, s: it.qty });
-          put(r, c0 + 4, { st: 6 });
+          put(r, c0 + 2, { st: 6, s: it.qty });
+          put(r, c0 + 3, { st: 6 });
+          put(r, c0 + 4, { st: 8, url: it.custom ? cleanLink(it.link) : '' }); // 상품 링크만, 주소 그대로 (평소 발주서처럼)
           r++;
         });
         put(r0, c0, { st: 6, s: site });
-        put(r0, c0 + 4, { st: 6, s: who ? [who.name, who.tel, who.addr].filter(Boolean).join('\n') : '' });
+        put(r0, c0 + 3, { st: 6, s: who ? [who.name, who.tel, who.addr].filter(Boolean).join('\n') : '' });
         var lines = who ? [who.name, who.tel, who.addr].filter(Boolean).length : 1;
         if (r - r0 > 1) {
           sh.merges.push(colName(c0 - 1) + r0 + ':' + colName(c0 - 1) + (r - 1));
-          sh.merges.push(colName(c0 + 3) + r0 + ':' + colName(c0 + 3) + (r - 1));
+          sh.merges.push(colName(c0 + 2) + r0 + ':' + colName(c0 + 2) + (r - 1)); // 수취인 정보 (colName 은 0부터)
           if (lines > r - r0) sh.heights[r0] = 16 * lines;
         } else if (lines > 1) sh.heights[r0] = 16 * lines;
       });
