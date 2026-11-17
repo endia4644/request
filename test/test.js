@@ -38,7 +38,7 @@ t('등록 → 품명 옆 칸에 쿠팡 검색 링크', () => {
   const sh = env.sheets['청소용품'];
   assert.equal(sh.peek(1, 3).v, '품명'); assert.equal(sh.peek(1, 4).v, '쿠팡');
   assert.equal(sh.peek(2, 3).v, '락스 4L');
-  assert.equal(sh.peek(2, 4).f, '=HYPERLINK("https://www.coupang.com/np/search?q=%EB%9D%BD%EC%8A%A4%204L","쿠팡에서 찾기")');
+  assert.equal(sh.peek(2, 4).f, '=HYPERLINK("https://www.coupang.com/np/search?q=%EB%9D%BD%EC%8A%A4%204L","https://www.coupang.com/np/search?q=락스 4L")');
   assert.equal(sh.peek(2, 11).v, '요청');
   assert.ok(sh.peek(2, 1).v instanceof Date);
   const it = list().items[0];
@@ -52,7 +52,7 @@ t('쿠팡 공유 문구를 붙여넣으면 주소만 뽑아 상품 링크로', (
   const it = list().items.find((x) => x.name === '물티슈');
   assert.equal(it.link, 'https://link.coupang.com/a/bXyZ12'); assert.equal(it.custom, true);
   const sh = env.sheets['청소용품'];
-  assert.equal(sh.peek(3, 4).f, '=HYPERLINK("https://link.coupang.com/a/bXyZ12","쿠팡 상품")');
+  assert.equal(sh.peek(3, 4).f, '=HYPERLINK("https://link.coupang.com/a/bXyZ12","https://link.coupang.com/a/bXyZ12")');
 });
 
 t('품명 없으면 거절, 링크가 주소가 아니면 거절', () => {
@@ -114,7 +114,7 @@ t('시트에 손으로 품명을 적으면 onEdit 가 링크·ID·시각·상태
   // 링크 칸에 주소를 붙여넣으면 상품 링크로
   sh.getRange(row, 4).setValue('https://www.coupang.com/vp/products/123?itemId=9');
   g.onEdit({ range: sh.getRange(row, 4) });
-  assert.equal(sh.peek(row, 4).f, '=HYPERLINK("https://www.coupang.com/vp/products/123?itemId=9","쿠팡 상품")');
+  assert.equal(sh.peek(row, 4).f, '=HYPERLINK("https://www.coupang.com/vp/products/123?itemId=9","https://www.coupang.com/vp/products/123?itemId=9")');
   // 품명을 지우면 검색 링크도 지운다, 상품 링크는 남긴다
   const row2 = row + 1;
   sh.getRange(row2, 3).setValue('밀대'); g.onEdit({ range: sh.getRange(row2, 3) });
@@ -409,6 +409,27 @@ t('잘못된 JSON', () => {
       ['가나 브랜드', '라마바', '010-1234-0002'],
       ['본사·관리', '사아자', '010-1234-0003'],
     ]);
+  });
+}
+
+// ── 예전 '쿠팡 상품' 글자로 적힌 쿠팡 칸 → 주소 전체로 한 번만 바꾼다 ──
+{
+  const e9 = makeEnv(); e9.props.TEAM_KEY = 'k9';
+  t('옛 쿠팡 칸 글자를 주소 전체로 (한 번만)', () => {
+    const sh = e9.ss.insertSheet('청소용품');
+    sh.getRange(1, 1, 1, 13).setValues([['등록일시', '현장', '품명', '쿠팡', '사진', '수량', '수취인', '연락처', '주소', '등록자', '상태', '메모', 'ID']]);
+    sh.getRange(2, 1, 1, 13).setValues([[new Date(), '', '락스', '', '', '', '', '', '', '', '요청', '', 'r1']]);
+    sh.getRange(2, 4).setFormula('=HYPERLINK("https://link.coupang.com/a/X1","쿠팡 상품")');
+    sh.getRange(3, 1, 1, 13).setValues([[new Date(), '', '물티슈', '', '', '', '', '', '', '', '요청', '', 'r2']]);
+    sh.getRange(3, 4).setFormula('=HYPERLINK("https://www.coupang.com/np/search?q=%EB%AC%BC","쿠팡에서 찾기")');
+    JSON.parse(e9.ctx.doGet({ parameter: { action: 'list', k: 'k9' } }).content);
+    assert.equal(sh.peek(2, 4).f, '=HYPERLINK("https://link.coupang.com/a/X1","https://link.coupang.com/a/X1")');
+    assert.equal(sh.peek(3, 4).v, 'https://www.coupang.com/np/search?q=물');
+    assert.equal(e9.props.LINK_LABEL, 'url');
+    // 한 번 한 뒤에는 손으로 바꾼 글자를 다시 건드리지 않는다
+    sh.getRange(2, 4).setFormula('=HYPERLINK("https://link.coupang.com/a/X1","내 글자")');
+    JSON.parse(e9.ctx.doGet({ parameter: { action: 'list', k: 'k9' } }).content);
+    assert.equal(sh.peek(2, 4).v, '내 글자');
   });
 }
 

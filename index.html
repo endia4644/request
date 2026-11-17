@@ -634,7 +634,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   // 이 화면이 기대하는 서버 코드 버전 (Code.gs 의 SERVER_VERSION). 서버가 이것보다 옛 것이면 맨 위에 안내.
   var SERVER_LATEST = '2026-11-17';
   // 이 화면(index.html) 버전 — 고칠 때마다 올린다. ⋮ 메뉴 맨 아래에 보인다 (옛 화면이 남아 있는지 확인용)
-  var APP_VERSION = '2026-11-17e';
+  var APP_VERSION = '2026-11-17f';
   // 서버 코드가 최신인지 응답 모양으로 판단 (version 이 없던 옛 서버용)
   //   최신(13열): 기록에 addr·img, 수취인에 grp·addr / 어제(11열): rcv 는 있고 addr 없음 / 그 전(9열): rcv 없음
   function serverVersion(r) {
@@ -1444,7 +1444,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     function urlCell(ref, url, st) {
       if (!url) return st ? '<c r="' + ref + '" s="' + st + '"/>' : '';
       curLinks.push({ ref: ref, url: url });
-      return '<c r="' + ref + '" s="' + (st || 3) + '" t="inlineStr"><is><t xml:space="preserve">' + xesc(url) + '</t></is></c>';
+      var shown = url; try { shown = decodeURIComponent(url); } catch (e) {} // 검색 주소의 %EB… 는 한글로 (누르면 원래 주소)
+      return '<c r="' + ref + '" s="' + (st || 3) + '" t="inlineStr"><is><t xml:space="preserve">' + xesc(shown) + '</t></is></c>';
     }
     function linksXml() {
       if (!curLinks.length) return '';

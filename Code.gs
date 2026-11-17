@@ -17,7 +17,7 @@
 
 // 서버 코드 버전 — 고칠 때마다 올린다. 브라우저로 <웹 앱 주소>?action=version 을 열면 팀 코드 없이 이 값이 보인다.
 // 앱(index.html)의 SERVER_LATEST 와 같으면 최신.
-const SERVER_VERSION = '2026-11-17';
+const SERVER_VERSION = '2026-11-17b'; // b: 쿠팡 칸에 '쿠팡 상품' 대신 주소 전체를 보여줌
 
 const CFG = {
   SHEET: '청소용품',
@@ -187,6 +187,7 @@ function sheet_() {
     formatSheet_(sh);
   }
   migrate_(sh);
+  relabelLinks_(sh);
   return sh;
 }
 
@@ -672,7 +673,7 @@ function formatSheet_(sh) {
     .setFontWeight('bold').setBackground(COLOR.head).setFontColor(COLOR.headInk)
     .setHorizontalAlignment('center');
   sh.setFrozenRows(1);
-  const widths = { TIME: 130, SITE: 150, NAME: 200, LINK: 100, IMG: 70, QTY: 70, RCV: 80, TEL: 120, ADDR: 260, BY: 80, STATUS: 80, MEMO: 220, ID: 90 };
+  const widths = { TIME: 130, SITE: 150, NAME: 200, LINK: 280, IMG: 70, QTY: 70, RCV: 80, TEL: 120, ADDR: 260, BY: 80, STATUS: 80, MEMO: 220, ID: 90 };
   Object.keys(widths).forEach((k) => sh.setColumnWidth(COL[k], widths[k]));
   sh.getRange(L(COL.TIME) + '2:' + L(COL.TIME)).setNumberFormat('yyyy-mm-dd hh:mm');
   sh.getRange(L(COL.TEL) + '2:' + L(COL.TEL)).setNumberFormat('@'); // 연락처: 맨 앞 0 이 잘리지 않게 글자로
@@ -716,9 +717,39 @@ function linkLabel(url) {
   return /coupang\.com/.test(url) ? '쿠팡 상품' : '상품 링크';
 }
 
+/**
+ * 쿠팡 칸 수식. 보이는 글자 = 주소 전체 (2026-11-17 사용자: "쿠팡 링크라고 하지 말고 링크 전체를 노출").
+ * 검색 주소의 %EB%9D%BD… 은 한글로 풀어서 보여준다 (누르면 원래 주소로 열림). label 인자는 옛 호출 호환용으로 무시.
+ */
 function linkFormula(url, label) {
   const q = (s) => String(s).replace(/"/g, '""');
-  return '=HYPERLINK("' + q(String(url).replace(/"/g, '%22')) + '","' + q(label) + '")';
+  return '=HYPERLINK("' + q(String(url).replace(/"/g, '%22')) + '","' + q(displayUrl(url)) + '")';
+}
+
+function displayUrl(url) {
+  try { return decodeURIComponent(String(url)); } catch (e) { return String(url); }
+}
+
+/** 예전에 '쿠팡 상품'/'쿠팡에서 찾기' 글자로 적힌 쿠팡 칸을 주소 전체로 한 번 바꾼다 */
+function relabelLinks_(sh) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('LINK_LABEL') === 'url') return;
+  const last = sh.getLastRow();
+  if (last >= 2) {
+    const rng = sh.getRange(2, COL.LINK, last - 1, 1);
+    const fs = rng.getFormulas();
+    let changed = false;
+    const out = fs.map((r) => {
+      const u = urlFromFormula(r[0]);
+      if (!u) return [r[0]];
+      const f = linkFormula(u);
+      if (f !== r[0]) changed = true;
+      return [f];
+    });
+    if (changed) out.forEach((r, i) => { if (r[0]) sh.getRange(i + 2, COL.LINK).setFormula(r[0]); });
+  }
+  sh.setColumnWidth(COL.LINK, 280);
+  props.setProperty('LINK_LABEL', 'url');
 }
 
 function urlFromFormula(f) {

@@ -1,5 +1,5 @@
-/* 청소용품 요청 서버 버전 2026-11-17 (붙여넣기용: 주석을 뺀 Code.gs). 원본 https://github.com/endia4644/request */
-const SERVER_VERSION = '2026-11-17';
+/* 청소용품 요청 서버 버전 2026-11-17b (붙여넣기용: 주석을 뺀 Code.gs). 원본 https://github.com/endia4644/request */
+const SERVER_VERSION = '2026-11-17b';
 
 const CFG = {
 SHEET: '청소용품',
@@ -235,6 +235,7 @@ sh = ss.insertSheet(CFG.SHEET);
 formatSheet_(sh);
 }
 migrate_(sh);
+relabelLinks_(sh);
 return sh;
 }
 
@@ -803,7 +804,7 @@ const widths = {
 TIME: 130,
 SITE: 150,
 NAME: 200,
-LINK: 100,
+LINK: 280,
 IMG: 70,
 QTY: 70,
 RCV: 80,
@@ -844,7 +845,38 @@ return /coupang\.com/.test(url) ? '쿠팡 상품' : '상품 링크';
 
 function linkFormula(url, label) {
 const q = s => String(s).replace(/"/g, '""');
-return '=HYPERLINK("' + q(String(url).replace(/"/g, '%22')) + '","' + q(label) + '")';
+return '=HYPERLINK("' + q(String(url).replace(/"/g, '%22')) + '","' + q(displayUrl(url)) + '")';
+}
+
+function displayUrl(url) {
+try {
+return decodeURIComponent(String(url));
+} catch (e) {
+return String(url);
+}
+}
+
+function relabelLinks_(sh) {
+const props = PropertiesService.getScriptProperties();
+if (props.getProperty('LINK_LABEL') === 'url') return;
+const last = sh.getLastRow();
+if (last >= 2) {
+const rng = sh.getRange(2, COL.LINK, last - 1, 1);
+const fs = rng.getFormulas();
+let changed = false;
+const out = fs.map((r => {
+const u = urlFromFormula(r[0]);
+if (!u) return [ r[0] ];
+const f = linkFormula(u);
+if (f !== r[0]) changed = true;
+return [ f ];
+}));
+if (changed) out.forEach(((r, i) => {
+if (r[0]) sh.getRange(i + 2, COL.LINK).setFormula(r[0]);
+}));
+}
+sh.setColumnWidth(COL.LINK, 280);
+props.setProperty('LINK_LABEL', 'url');
 }
 
 function urlFromFormula(f) {

@@ -57,7 +57,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   console.log('시트:', JSON.stringify(sheet, null, 0));
   assert.equal(sheet[1][2], '락스 4L'); assert.equal(sheet[1][5], '2통'); assert.equal(sheet[1][9], '김철수');
   assert.match(sheet[1][3], /^=HYPERLINK\("https:\/\/www\.coupang\.com\/np\/search\?q=/);
-  assert.equal(sheet[2][3], '=HYPERLINK("https://link.coupang.com/a/bXyZ12","쿠팡 상품")');
+  assert.equal(sheet[2][3], '=HYPERLINK("https://link.coupang.com/a/bXyZ12","https://link.coupang.com/a/bXyZ12")');
   assert.equal(await a.locator('.item').first().locator('.cbtn').getAttribute('href'), 'https://link.coupang.com/a/bXyZ12');
 
   // 현장별 최근 발주 카드
@@ -106,7 +106,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   await a.click('#addBtn');
   await a.waitForFunction(() => document.querySelectorAll('.item:not(.pending)').length === 3, null, { timeout: 10000 });
   const shC = await (await fetch(`http://localhost:${port}/__sheet`)).json();
-  assert.equal(shC.find((r) => r[2] === '위생백')[3], '=HYPERLINK("https://www.coupang.com/vp/products/25828?itemId=111&vendorItemId=222","쿠팡 상품")');
+  assert.equal(shC.find((r) => r[2] === '위생백')[3], '=HYPERLINK("https://www.coupang.com/vp/products/25828?itemId=111&vendorItemId=222","https://www.coupang.com/vp/products/25828?itemId=111&vendorItemId=222")');
   await a.click('.item:has-text("위생백") .nm'); await a.waitForTimeout(300);
   a.once('dialog', (d) => d.accept());
   await a.click('#eDel'); await a.waitForTimeout(800);
@@ -137,7 +137,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   await a.waitForFunction(() => /BAG100/.test(document.querySelector('.item .cbtn').getAttribute('href') || ''), null, { timeout: 10000 });
   await a.waitForTimeout(500);
   const sh3 = await (await fetch(`http://localhost:${port}/__sheet`)).json();
-  assert.ok(sh3.some((r) => r[3] === '=HYPERLINK("https://link.coupang.com/a/BAG100","쿠팡 상품")'), '시트에 상품 링크');
+  assert.ok(sh3.some((r) => r[3] === '=HYPERLINK("https://link.coupang.com/a/BAG100","https://link.coupang.com/a/BAG100")'), '시트에 상품 링크');
   await a.screenshot({ path: path.join(OUT, '11_item_linked.png') });
 
   // 지역장이 '주문했어요' → 김철수 폰 '주문함' 탭으로 옮겨감
