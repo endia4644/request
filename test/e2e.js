@@ -398,6 +398,213 @@ print(json.dumps({'cells': {c.coordinate: c.value for r in ws.iter_rows() for c 
     await octx.close(); oldSrv.server.close();
   }
 
+  // ── 메모 한꺼번에 넣기 · 물품팩 (2026-11-19) ──
+  {
+    const xl = (file) => JSON.parse(require('child_process').execFileSync('python3', ['-c', `
+import openpyxl, json, sys
+wb = openpyxl.load_workbook(sys.argv[1]); ws = wb.worksheets[0]
+print(json.dumps({'names': wb.sheetnames, 'cells': {c.coordinate: c.value for r in ws.iter_rows() for c in r if c.value is not None}, 'links': {c.coordinate: c.hyperlink.target for r in ws.iter_rows() for c in r if c.hyperlink}}, ensure_ascii=False))
+`, file]).toString());
+    const srv = require('./serve').start(8791);
+    srv.env.ctx.addItem_({ name: '홈스타', qty: '1통', site: '○○빌딩', rcv: '김철수', tel: '010-1111-2222', addr: '서울시 ○○구 1', by: '김철수' });
+    const answers = [];
+    async function phoneAt(port, who) {
+      const ctx = await b.newContext({ ...phone });
+      const pg = await ctx.newPage();
+      pg.on('pageerror', (e) => errors.push('메모·팩 ' + port + ': ' + e.message));
+      pg.on('dialog', (d) => d.accept(d.type() === 'prompt' ? (answers.shift() || d.defaultValue()) : undefined));
+      await pg.goto(`http://localhost:${port}/`);
+      await pg.evaluate(([port, who]) => {
+        localStorage.setItem('sup.cfg', JSON.stringify({ u: `http://localhost:${port}/api`, k: 'testkey123' }));
+        localStorage.setItem('sup.me', JSON.stringify(who));
+      }, [port, who]);
+      await pg.reload();
+      await pg.waitForFunction(() => /○○빌딩|홈스타/.test(document.body.textContent), null, { timeout: 10000 });
+      return pg;
+    }
+    const sheetRows = (env) => { const s = env.sheets['청소용품'], out = []; for (let r = 2; r <= s.getLastRow(); r++) out.push([2, 3, 4, 6, 7, 8, 9].map((c) => s.peek(r, c).f || s.peek(r, c).v)); return out; };
+    const MEMO = [
+      '[박지역장] [오후 3:12] ○○빌딩:',
+      '- 윈덱스 2개',
+      '락스 3통, 고무장갑 5켤레',
+      'https://link.coupang.com/a/abc123',
+      '부탁드립니다~',
+      '--------------- 2026년 11월 18일 수요일 ---------------',
+      '새 현장:',
+      '걸레 x4',
+    ].join('\n');
+    const m = await phoneAt(8791, '박지역장');
+    assert.equal(await m.isVisible('#quickRow'), true);
+    await m.screenshot({ path: path.join(OUT, '20_quick.png') });
+    await m.click('#bulkBtn');
+    await m.fill('#bText', MEMO);
+    await m.waitForFunction(() => document.querySelectorAll('#bOut .brow').length === 5);
+    assert.equal(await m.locator('#bOut .brow input[type=checkbox]:checked').count(), 4, '인사말은 꺼 둔다');
+    assert.deepEqual(await m.$$eval('#bOut .bsite', (els) => els.map((e) => e.textContent)), ['🏢 ○○빌딩', '🏢 새 현장']);
+    assert.deepEqual(await m.$$eval('#bOut .brow .bn', (els) => els.map((e) => e.value)), ['윈덱스', '락스', '고무장갑', '부탁드립니다~', '걸레']);
+    assert.deepEqual(await m.$$eval('#bOut .brow .bq', (els) => els.map((e) => e.value)), ['2개', '3통', '5켤레', '1개', '4개']);
+    assert.match(await m.locator('#bOut .brow').nth(2).textContent(), /상품 링크/); // 주소만 있는 줄 → 바로 위 고무장갑
+    assert.equal(await m.textContent('#bGo'), '4개 등록하기');
+    await m.locator('#bOut .brow .bq').first().fill('3개'); // 고칠 수 있다
+    await m.screenshot({ path: path.join(OUT, '21_bulk.png'), fullPage: false });
+    // 엑셀만 (등록 안 함)
+    const [bd] = await Promise.all([m.waitForEvent('download'), m.click('#bXlsx')]);
+    const bf = path.join(OUT, 'bulk.xlsx'); await bd.saveAs(bf);
+    assert.match(bd.suggestedFilename(), /^청소용품 발주_현장2곳_\d{4}-\d\d-\d\d\.xlsx$/);
+    const bx = xl(bf);
+    assert.deepEqual(bx.names, ['발주서']);
+    const cellsOf = (x) => Object.values(x.cells);
+    assert.ok(cellsOf(bx).includes('김철수\n010-1111-2222\n서울시 ○○구 1'), '아는 현장은 수취인이 저절로');
+    ['윈덱스', '3개', '락스', '고무장갑', '5켤레', '걸레', '새 현장', '○○빌딩'].forEach((v) => assert.ok(cellsOf(bx).includes(v), v));
+    assert.ok(!cellsOf(bx).includes('부탁드립니다~'));
+    assert.ok(Object.values(bx.links).some((l) => l.includes(encodeURIComponent('https://link.coupang.com/a/abc123'))));
+    assert.equal(sheetRows(srv.env).length, 1, '엑셀만 받을 땐 시트에 안 올린다');
+    // 등록
+    await m.click('#bGo');
+    await m.waitForFunction(() => !document.querySelector('#sheet').classList.contains('on'));
+    await m.waitForFunction(() => document.querySelectorAll('.item.pending').length === 0 && document.querySelectorAll('.item, .sline').length > 0);
+    let rows = sheetRows(srv.env);
+    console.log('메모 등록:', JSON.stringify(rows));
+    assert.equal(rows.length, 5);
+    const byName = (n) => rows.find((r) => r[1] === n);
+    assert.deepEqual(byName('윈덱스').slice(0, 1).concat(byName('윈덱스').slice(3)), ['○○빌딩', '3개', '김철수', '010-1111-2222', '서울시 ○○구 1']);
+    assert.equal(byName('고무장갑')[2], '=HYPERLINK("https://link.coupang.com/a/abc123","https://link.coupang.com/a/abc123")');
+    assert.deepEqual(byName('걸레').slice(0, 1).concat(byName('걸레').slice(3)), ['새 현장', '4개', '', '', '']);
+
+    // 물품팩: 처음엔 '신규현장 물품팩'(비어 있음) → 자주 시킨 것으로 채우기
+    await m.click('#packBtn');
+    await m.waitForSelector('.pack');
+    await m.waitForFunction(() => /시트 물품팩 탭에 저장돼요/.test(document.querySelector('#sheetBody').textContent));
+    assert.match(await m.textContent('#sheetBody'), /신규현장 물품팩\s*비어 있음/);
+    await m.click('.pack');
+    await m.waitForSelector('.pempty');
+    await m.click('#pFreq');
+    await m.waitForSelector('#pFreqGo');
+    assert.equal(await m.locator('#pFillBox .frow').count(), 5);
+    await m.click('#pFillBox .frow:has-text("걸레") input'); // 걸레는 빼고
+    await m.click('#pFreqGo');
+    await m.waitForFunction(() => document.querySelectorAll('#pList .prow').length === 4);
+    await m.fill('#pAdd', '양동');
+    await m.fill('#pAdd', '양동이');
+    await m.press('#pAdd', 'Enter');
+    await m.waitForFunction(() => document.querySelectorAll('#pList .prow').length === 5);
+    assert.match(await m.textContent('#pList .prow:last-child'), /상품 링크/); // 목록 품목의 링크까지
+    await m.waitForFunction(() => /저장했어요/.test(document.querySelector('#pSaved').textContent));
+    const packSh = () => { const s = srv.env.sheets['물품팩'], o = []; for (let r = 2; r <= s.getLastRow(); r++) o.push([1, 2, 3, 4].map((c) => s.peek(r, c).v)); return o; };
+    console.log('물품팩 탭:', JSON.stringify(packSh()));
+    assert.equal(packSh().length, 5); assert.ok(packSh().every((r) => r[0] === '신규현장 물품팩'));
+    assert.deepEqual(packSh().find((r) => r[1] === '윈덱스').slice(2), ['3개', '']);
+    assert.match(packSh().find((r) => r[1] === '양동이')[3], /^https:\/\/www\.coupang\.com\/vp\/products\/6675264657/);
+    // 수량 고치기 · 빼기
+    const before = await m.$$eval('#pList .prow .bn', (els) => els.map((e) => e.value));
+    await m.fill('#pList .prow:first-child .bq', '6개');
+    await m.click('#pList .prow:nth-child(2) .x');
+    await m.waitForFunction(() => document.querySelectorAll('#pList .prow').length === 4);
+    await m.waitForFunction(() => /저장했어요/.test(document.querySelector('#pSaved').textContent));
+    await m.waitForTimeout(900);
+    assert.equal(packSh().length, 4);
+    // 현장 없이 엑셀 → 막고 안내
+    await m.click('#pXlsx');
+    assert.equal(await m.evaluate(() => document.activeElement.id), 'dSite');
+    await m.fill('#dSite', '□□타워 신규');
+    await m.fill('#dRcv', '이영희'); await m.fill('#dTel', '01098765432'); await m.press('#dTel', 'Tab');
+    await m.screenshot({ path: path.join(OUT, '22_pack.png'), fullPage: false });
+    const [pd] = await Promise.all([m.waitForEvent('download'), m.click('#pXlsx')]);
+    const pf = path.join(OUT, 'pack.xlsx'); await pd.saveAs(pf);
+    assert.match(pd.suggestedFilename(), /^신규현장 물품팩_□□타워 신규_\d{4}-\d\d-\d\d\.xlsx$/);
+    const px = xl(pf);
+    console.log('물품팩 엑셀:', JSON.stringify(px.cells));
+    assert.equal(px.cells.B5, '□□타워 신규');
+    assert.equal(px.cells.E5, '이영희\n010-9876-5432');
+    assert.deepEqual(['C5', 'C6', 'C7', 'C8'].map((k) => px.cells[k]), before.filter((x, i) => i !== 1));
+    assert.equal(px.cells.D5, '6개');
+    // 시트에 등록 (확인 창 → 예)
+    await m.click('#pReg');
+    await m.waitForFunction(() => !document.querySelector('#sheet').classList.contains('on'));
+    rows = sheetRows(srv.env);
+    assert.equal(rows.filter((r) => r[0] === '□□타워 신규').length, 4);
+    assert.ok(rows.filter((r) => r[0] === '□□타워 신규').every((r) => r[4] === '이영희' && r[5] === '010-9876-5432'));
+    // 이름 바꾸기 → 다른 휴대폰에서도 보인다
+    await m.click('#packBtn');
+    await m.waitForFunction(() => /4가지/.test(document.querySelector('#sheetBody').textContent));
+    await m.click('.pack');
+    answers.push('신규현장 기본팩');
+    await m.click('#pRename');
+    await m.waitForFunction(() => /저장했어요/.test(document.querySelector('#pSaved').textContent));
+    assert.ok(packSh().every((r) => r[0] === '신규현장 기본팩'));
+    const k2 = await phoneAt(8791, '김철수');
+    await k2.click('#packBtn');
+    await k2.waitForFunction(() => /신규현장 기본팩\s*4가지/.test(document.querySelector('#sheetBody').textContent));
+    await k2.screenshot({ path: path.join(OUT, '23_packs_other_phone.png') });
+    await k2.context().close();
+    // 메모로 새 팩 저장
+    await m.click('#pBack');
+    await m.waitForSelector('#pkNew');
+    await m.click('#scrim', { position: { x: 10, y: 10 } });
+    await m.click('#bulkBtn');
+    await m.fill('#bText', '매직블럭 10개\n집게 2개');
+    await m.waitForFunction(() => document.querySelectorAll('#bOut .brow').length === 2);
+    answers.push('월초 기본');
+    await m.click('#bPack');
+    await m.waitForFunction(() => /월초 기본/.test(JSON.stringify(Object.values(window.localStorage))));
+    assert.deepEqual(packSh().filter((r) => r[0] === '월초 기본').map((r) => r[1] + ' ' + r[2]), ['매직블럭 10개', '집게 2개']);
+    await m.context().close();
+    srv.server.close();
+  }
+
+  // ── 옛 서버(addMany·packs 모름): 하나씩 등록, 팩은 이 휴대폰에만 → 서버가 새로 바뀌면 올린다 ──
+  {
+    const old = require('./serve').start(8792);
+    const real = old.env.ctx.handle_;
+    const NEW = ['addMany', 'packs', 'savePack', 'removePack'];
+    let upgraded = false;
+    old.env.ctx.handle_ = (req) => {
+      if (upgraded) return real(req);
+      if (NEW.includes(req.action)) return { ok: false, error: '알 수 없는 요청: ' + req.action };
+      const r = real(req);
+      if (r.version) r.version = '2026-11-17b';
+      return r;
+    };
+    old.env.ctx.addItem_({ name: '홈스타', site: '○○빌딩' });
+    const ctx = await b.newContext(phone);
+    const op = await ctx.newPage();
+    op.on('pageerror', (e) => errors.push('옛 서버 팩: ' + e.message));
+    op.on('dialog', (d) => d.accept(d.type() === 'prompt' ? '옛 팩' : undefined));
+    await op.goto('http://localhost:8792/');
+    await op.evaluate(() => {
+      localStorage.setItem('sup.cfg', JSON.stringify({ u: 'http://localhost:8792/api', k: 'testkey123' }));
+      localStorage.setItem('sup.me', JSON.stringify('김철수'));
+    });
+    await op.reload();
+    await op.waitForFunction(() => /홈스타/.test(document.body.textContent), null, { timeout: 10000 });
+    await op.waitForSelector('#diagBox:not([hidden])');
+    assert.match(await op.textContent('#diagBox'), /새 버전이 있어요[\s\S]*2026-11-17b[\s\S]*Code\.paste\.gs/);
+    await op.click('#bulkBtn');
+    await op.fill('#bText', '○○빌딩\n윈덱스 2개\n락스 1통\n고무장갑 3켤레');
+    await op.waitForFunction(() => document.querySelectorAll('#bOut .brow').length === 3);
+    await op.click('#bGo');
+    await op.waitForFunction(() => !document.querySelector('#sheet').classList.contains('on'));
+    await op.waitForTimeout(500);
+    const s = old.env.sheets['청소용품'];
+    assert.equal(s.getLastRow(), 5, '옛 서버도 하나씩 3줄');
+    await op.click('#packBtn');
+    await op.waitForFunction(() => /이 휴대폰에만/.test(document.querySelector('#sheetBody').textContent));
+    await op.screenshot({ path: path.join(OUT, '24_packs_local.png') });
+    await op.click('.pack');
+    await op.click('#pFreq');
+    await op.click('#pFreqGo');
+    await op.waitForFunction(() => /이 휴대폰에 저장했어요/.test(document.querySelector('#pSaved').textContent));
+    assert.ok(!old.env.sheets['물품팩']);
+    await op.click('#scrim', { position: { x: 10, y: 10 } });
+    upgraded = true; // 사용자가 새 서버 코드를 붙여넣음
+    await op.click('#packBtn');
+    await op.waitForFunction(() => /시트 물품팩 탭에 저장돼요/.test(document.querySelector('#sheetBody').textContent));
+    await op.waitForFunction(() => /신규현장 물품팩\s*4가지/.test(document.querySelector('#sheetBody').textContent));
+    assert.equal(old.env.ctx.readPacks_()[0].name, '신규현장 물품팩');
+    assert.equal(old.env.ctx.readPacks_()[0].items.length, 4);
+    await ctx.close(); old.server.close();
+  }
+
   // ── 앱에서 근무자 명단 올리기: 오션 .xls(=HTML 표) / .xlsx ──
   {
     const fs = require('fs');

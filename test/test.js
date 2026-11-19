@@ -433,4 +433,58 @@ t('잘못된 JSON', () => {
   });
 }
 
+// ── 메모 한꺼번에 등록 (addMany) ──
+{
+  const e10 = makeEnv(); e10.props.TEAM_KEY = 'k10';
+  const p10 = (o) => JSON.parse(e10.ctx.doPost({ postData: { contents: JSON.stringify(Object.assign({ k: 'k10' }, o)) } }).content);
+  t('여러 줄 한꺼번에: 한 번에 적고, 같은 cid 는 건너뛰고, 품명 없는 줄은 errors', () => {
+    const rows = [
+      { cid: 'cbulk00001', name: '윈덱스', qty: '2개', site: '○○빌딩', rcv: '김철수', tel: '01012345678', by: '박지역장' },
+      { cid: 'cbulk00002', name: '=락스', qty: '3통', site: '○○빌딩', link: '[쿠팡] 락스 https://link.coupang.com/a/AAA111' },
+      { cid: 'cbulk00003', name: '  ', qty: '1개' },
+    ];
+    const r = p10({ action: 'addMany', rows });
+    assert.equal(r.ok, true); assert.equal(r.added, 2); assert.equal(r.errors.length, 1); assert.equal(r.errors[0].i, 2);
+    const sh = e10.sheets['청소용품'];
+    assert.equal(sh.peek(2, 3).v, '윈덱스'); assert.equal(sh.peek(2, 6).v, '2개'); assert.equal(sh.peek(2, 8).v, '010-1234-5678');
+    assert.match(sh.peek(2, 4).f, /^=HYPERLINK\("https:\/\/www\.coupang\.com\/np\/search\?q=%EC%9C%88/);
+    assert.equal(sh.peek(3, 3).f, ''); assert.equal(sh.peek(3, 3).v, '=락스');
+    assert.equal(sh.peek(3, 4).f, '=HYPERLINK("https://link.coupang.com/a/AAA111","https://link.coupang.com/a/AAA111")');
+    assert.equal(sh.peek(3, 13).v, 'cbulk00002');
+    const again = p10({ action: 'addMany', rows: rows.slice(0, 2) });
+    assert.equal(again.added, 0); assert.deepEqual(again.dup, ['cbulk00001', 'cbulk00002']);
+    assert.equal(sh.getLastRow(), 3);
+    const c = e10.sheets['수취인'];
+    assert.equal(c.peek(2, 3).v, '김철수');
+    assert.equal(p10({ action: 'addMany', rows: [] }).ok, false);
+  });
+
+  t('물품팩: 만들기 · 고치기 · 이름 바꾸기 · 빈 팩 · 지우기 (물품팩 탭)', () => {
+    assert.deepEqual(p10({ action: 'packs' }).packs, []);
+    let r = p10({ action: 'savePack', name: '신규현장 물품팩', items: [{ name: '윈덱스', qty: '2개' }, { name: '양동이', qty: '1개', link: 'https://www.coupang.com/vp/products/1?itemId=2' }, { name: ' ' }] });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.packs, [{ name: '신규현장 물품팩', items: [{ name: '윈덱스', qty: '2개', link: '' }, { name: '양동이', qty: '1개', link: 'https://www.coupang.com/vp/products/1?itemId=2' }] }]);
+    const sh = e10.sheets['물품팩'];
+    assert.deepEqual([1, 2, 3, 4].map((c) => sh.peek(1, c).v), ['팩 이름', '품목', '수량', '쿠팡 링크']);
+    assert.equal(sh.peek(3, 2).v, '양동이');
+    p10({ action: 'savePack', name: '매달 기본', items: [] }); // 빈 팩도 자리를 남긴다
+    r = p10({ action: 'packs' });
+    assert.deepEqual(r.packs.map((x) => [x.name, x.items.length]), [['신규현장 물품팩', 2], ['매달 기본', 0]]);
+    // 품목 줄여서 다시 저장 → 남은 줄 없이 덮어쓰기
+    r = p10({ action: 'savePack', name: '신규현장 물품팩', items: [{ name: '=홈스타', qty: '1통' }] });
+    assert.deepEqual(r.packs[0].items, [{ name: '=홈스타', qty: '1통', link: '' }]);
+    assert.equal(sh.peek(2, 2).f, ''); assert.equal(sh.getLastRow(), 3);
+    // 이름 바꾸기 / 겹치는 이름은 거절
+    assert.equal(p10({ action: 'savePack', old: '매달 기본', name: '신규현장 물품팩', items: [] }).ok, false);
+    r = p10({ action: 'savePack', old: '매달 기본', name: '월초 기본', items: [{ name: '고무장갑', qty: '5개' }] });
+    assert.deepEqual(r.packs.map((x) => x.name), ['신규현장 물품팩', '월초 기본']);
+    assert.equal(p10({ action: 'savePack', name: '  ', items: [] }).ok, false);
+    r = p10({ action: 'removePack', name: '신규현장 물품팩' });
+    assert.deepEqual(r.packs.map((x) => x.name), ['월초 기본']);
+    assert.equal(sh.getLastRow(), 2);
+    // 물품팩 탭은 근무자 명단으로 읽지 않는다
+    assert.equal(JSON.parse(e10.ctx.doGet({ parameter: { action: 'list', k: 'k10', contacts: '1' } }).content).contacts.length, 1);
+  });
+}
+
 console.log(`\n${n}개 모두 통과`);

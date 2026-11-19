@@ -289,6 +289,48 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
 .sheet.on ~ .toast { bottom: auto; top: calc(64px + env(safe-area-inset-top)); } /* 아래 창이 열려 있으면 버튼을 가리지 않게 위로 */
+/* 메모 한꺼번에 넣기 · 물품팩 */
+.quick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.quick button {
+  background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 12px; text-align: left;
+  display: grid; grid-template-columns: auto 1fr; column-gap: 9px; align-items: center; font-weight: 700; font-size: 15px; letter-spacing: -0.01em;
+}
+.quick button:active { background: var(--field); }
+.quick .qi { grid-row: span 2; font-size: 24px; line-height: 1; }
+.quick small { font-size: 12px; color: var(--sub); font-weight: 500; line-height: 1.3; }
+textarea.bulkta { height: 150px; margin-top: 8px; line-height: 1.5; }
+.sheet code { font-size: 12px; background: var(--field); border-radius: 5px; padding: 1px 4px; }
+.blist { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.bsite { padding: 8px 12px; background: var(--field); font-size: 13px; font-weight: 800; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.brow { display: grid; grid-template-columns: 32px 1fr 84px; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.brow:last-child { border-bottom: 0; }
+.brow input[type=checkbox] { width: 22px; height: 22px; margin: 0 auto; accent-color: var(--accent); }
+.brow .field { height: 44px; padding: 0 10px; border-radius: 10px; }
+.brow .bq { text-align: center; font-weight: 700; }
+.brow .bq.guess { color: var(--faint); font-weight: 500; }
+.brow .bm { grid-column: 2 / -1; font-size: 12px; color: var(--sub); margin: -2px 0 2px 2px; }
+.brow.off .field { opacity: .45; text-decoration: line-through; }
+.prow { grid-template-columns: 1fr 84px 36px; }
+.prow .bm { grid-column: 1 / -1; }
+.prow .x { width: 36px; height: 40px; color: var(--faint); font-size: 22px; border-radius: 10px; }
+.prow .x:active { background: var(--line); }
+.frow { grid-template-columns: 32px 1fr auto; font-size: 15px; padding: 10px 8px; cursor: pointer; }
+.frow .fq { font-size: 12px; color: var(--sub); white-space: nowrap; }
+.dgrid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 8px; }
+.packs { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.pack { width: 100%; text-align: left; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--field); }
+.pack:active { border-color: var(--accent); }
+.pack .pt { display: flex; align-items: baseline; gap: 8px; }
+.pack .pt b { flex: 1; font-size: 16px; overflow-wrap: anywhere; }
+.pack .pt span { font-size: 13px; color: var(--sub); font-weight: 600; white-space: nowrap; }
+.pack small { display: block; font-size: 13px; color: var(--sub); margin-top: 4px; overflow-wrap: anywhere; }
+.ptitle { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ptitle h2 { flex: 1; overflow-wrap: anywhere; }
+.pfill { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.pempty { text-align: center; color: var(--sub); font-size: 14px; padding: 22px 10px; border: 1.5px dashed var(--line); border-radius: 14px; line-height: 1.6; }
+.fillbox { margin-top: 10px; padding: 12px; border-radius: 14px; background: var(--field); font-size: 14px; }
+.fillbox .blist { background: var(--card); }
+.btnrow .ghost:disabled { opacity: .5; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -474,6 +516,11 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     </div>
   </form>
 
+  <div class="quick" id="quickRow" hidden>
+    <button type="button" id="bulkBtn"><span class="qi">📋</span>메모 붙여넣기<small>카톡 메모를 통째로</small></button>
+    <button type="button" id="packBtn"><span class="qi">📦</span>물품팩<small>자주 시키는 묶음</small></button>
+  </div>
+
   <section id="listView" hidden>
     <div class="card diag" id="diagBox" hidden></div>
     <div class="viewsw" id="viewSw">
@@ -496,6 +543,9 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
 
 <datalist id="dlNames"></datalist>
 <datalist id="dlSites"></datalist>
+<datalist id="dlSitesAll"></datalist>
+<datalist id="dlNamesAll"></datalist>
+<datalist id="dlRcv"></datalist>
 
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"><div class="grab"></div><div id="sheetBody"></div></div>
@@ -525,6 +575,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
     view: load('view', 'site'), month: '', // month: 'YYYY-MM' (월별 합계에서 보는 달)
     period: load('period', 'month'), // 현장별 보기 기간: week | month | last | all
     contacts: [], contactsAt: 0, // 수취인 목록 (시트 '수취인' 탭) — 5분마다 다시 받음
+    packs: load('packs', null), packMode: '', // 물품팩 (packMode: server = 시트 물품팩 탭 / local = 이 휴대폰만)
     unit: load('unit', '개'), writes: 0, gen: 0, lastOk: 0, prevIds: null, err: '',
   };
 
@@ -632,9 +683,9 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   }
 
   // 이 화면이 기대하는 서버 코드 버전 (Code.gs 의 SERVER_VERSION). 서버가 이것보다 옛 것이면 맨 위에 안내.
-  var SERVER_LATEST = '2026-11-17';
+  var SERVER_LATEST = '2026-11-19'; // 11-19: 메모 한꺼번에 등록·물품팩
   // 이 화면(index.html) 버전 — 고칠 때마다 올린다. ⋮ 메뉴 맨 아래에 보인다 (옛 화면이 남아 있는지 확인용)
-  var APP_VERSION = '2026-11-17h';
+  var APP_VERSION = '2026-11-19';
   // 서버 코드가 최신인지 응답 모양으로 판단 (version 이 없던 옛 서버용)
   //   최신(13열): 기록에 addr·img, 수취인에 grp·addr / 어제(11열): rcv 는 있고 addr 없음 / 그 전(9열): rcv 없음
   function serverVersion(r) {
@@ -655,7 +706,13 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   // 첫 화면 맨 위 안내: 서버가 옛 코드거나, 근무자 명단이 비었을 때
   function renderDiag() {
     var box = $('diagBox'), html = '';
-    if (state.server === 'old' || state.server === 'mid') {
+    if (state.server === 'mid' && state.serverVer >= '2026-11-17') {
+      // 쓰던 기능은 다 되고 새 기능만 없는 경우 — 겁주지 않고 안내만 (메모 넣기·물품팩은 옛 서버로도 돈다)
+      html = '<span class="dt">🆕 서버 코드 새 버전이 있어요</span><p>지금 <b>' + esc(state.serverVer) + '</b> → 새 버전 <b>' + SERVER_LATEST + '</b><br>' +
+        '지금 그대로도 메모 붙여넣기·물품팩은 돼요. 새 코드를 넣으면 <b>물품팩이 시트에 저장돼 같이 보이고</b>, 메모 등록이 한 번에 끝나요.<br>' +
+        '노트북 크롬에서 <code>raw.githubusercontent.com/endia4644/request/main/Code.paste.gs</code> 열기 → Ctrl+A, Ctrl+C → ' +
+        'Apps Script 편집기 Ctrl+A, Ctrl+V → 저장 → <b>배포 → 배포 관리</b> → ✏️ → 버전 <b>“새 버전”</b> → 배포 (새 배포 ❌)</p>';
+    } else if (state.server === 'old' || state.server === 'mid') {
       html = '<span class="dt">⚠️ 서버 코드가 아직 옛 버전이에요</span><p>지금 서버: <b>' + esc(state.serverVer || '버전 표시 없음 (예전 코드)') + '</b> · 필요한 버전: <b>' + SERVER_LATEST + '</b><br>' +
         '그래서 근무자 명단 · 쿠팡 사진 · 주소가 안 될 수 있어요.<br>' +
         '노트북 Apps Script → <b>배포 → 배포 관리</b> → 이 주소의 배포 ✏️ → 버전 <b>“새 버전”</b> → 배포<br>' +
@@ -672,7 +729,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   }
   function serverLabel() {
     return state.server === 'new' ? '✅ 최신 ' + (state.serverVer || '') :
-      state.server === 'mid' ? '⚠️ 어제 버전 — 주소·사진이 안 돼요. 배포 관리에서 이 주소의 버전을 "새 버전"으로' :
+      state.server === 'mid' ? '⚠️ 옛 버전 ' + (state.serverVer || '') + ' (새 버전 ' + SERVER_LATEST + ') — 새 코드를 붙여넣고 배포 관리에서 이 주소의 버전을 "새 버전"으로' :
       state.server === 'old' ? '⚠️ 처음 버전 — 수취인·주소·사진이 안 돼요. 배포 관리에서 이 주소의 버전을 "새 버전"으로' :
       '기록이 하나도 없어서 아직 판단 못 함 (하나 등록해 보세요)';
   }
@@ -1791,6 +1848,619 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       });
   }
 
+  // ── 메모 한꺼번에 넣기 · 물품팩 (2026-11-19 사용자 요청) ─────────────────
+  // 카톡에 쌓아 둔 메모를 통째로 붙여넣으면 한 줄에 물건 하나씩 정리한다. 현장 이름 줄이 있으면 그 아래는 그 현장.
+  // 물품팩 = 자주 시키는 물건 묶음 (예: 신규현장 물품팩). 시트 '물품팩' 탭에 저장 → 지역장님 휴대폰과 같이 본다.
+  // 서버 코드가 옛 것이면(packs 를 모름) 이 휴대폰에만 저장하고, 서버가 새로 바뀌면 올린다.
+  var QTY_U = '개|박스|box|통|롤|팩|묶음|세트|set|봉지|봉|병|켤레|족|ea|pcs';
+  var HAN_N = { '한': 1, '하나': 1, '두': 2, '둘': 2, '세': 3, '셋': 3, '네': 4, '넷': 4, '다섯': 5, '여섯': 6, '일곱': 7, '여덟': 8, '아홉': 9, '열': 10 };
+  var UNIT_ALIAS = { box: '박스', set: '세트', ea: '개', pcs: '개' };
+  var RE_QA = new RegExp('^(.+?)\\s*[:：=\\-/,]?\\s*(?:수량\\s*[:：]?\\s*)?(\\d{1,4})\\s*(' + QTY_U + ')\\s*(?:씩|정도|이요|요)?[.!~]*$', 'i');
+  var RE_QH = new RegExp('^(.+?)\\s+(한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열)\\s*(' + QTY_U + ')\\s*(?:씩|정도|이요|요)?[.!~]*$', 'i');
+  var RE_QP = new RegExp('^(.+?)\\s*[(\\[]\\s*(\\d{1,4})\\s*(' + QTY_U + ')?\\s*[)\\]]$', 'i');
+  var RE_QX = new RegExp('^(.*[^\\dA-Za-z])\\s*[xX×*]\\s*(\\d{1,4})\\s*(' + QTY_U + ')?\\s*(?:씩|요)?$', 'i');
+  var RE_QN = /^(.+?\D)\s+(\d{1,3})\s*(?:씩|요)?$/;
+  var RE_QS = new RegExp('^(\\d{1,4})\\s*(' + QTY_U + ')\\s+(.+)$', 'i');
+  function unitOf(u) { u = String(u || ''); return UNIT_ALIAS[u.toLowerCase()] || u; }
+  // '윈덱스 2개' → {name:'윈덱스', n:2, u:'개'} / 수량이 없으면 null
+  function splitQty(s) {
+    var m;
+    if ((m = s.match(RE_QS))) return { name: m[3].trim(), n: +m[1], u: unitOf(m[2]) };
+    if ((m = s.match(RE_QA))) return { name: m[1].trim(), n: +m[2], u: unitOf(m[3]) };
+    if ((m = s.match(RE_QH))) return { name: m[1].trim(), n: HAN_N[m[2]], u: unitOf(m[3]) };
+    if ((m = s.match(RE_QP))) return { name: m[1].trim(), n: +m[2], u: unitOf(m[3]) };
+    // 'x2' 앞이 숫자면 규격(320X210)이라 수량으로 안 본다. '320 x 2'처럼 띄어 쓰면 수량
+    if ((m = s.match(RE_QX)) && (!/\d$/.test(m[1].trim()) || /\s[xX×*]/.test(s))) return { name: m[1].trim(), n: +m[2], u: unitOf(m[3]) };
+    if ((m = s.match(RE_QN))) return { name: m[1].trim(), n: +m[2], u: '' };
+    return null;
+  }
+  // 카톡 대화를 복사하면 붙는 '[이름] [오후 3:12]', 내보내기 파일의 '2026. 11. 16. 오후 3:12, 이름 : ' 같은 머리를 뗀다
+  function stripChat(line) {
+    return line
+      .replace(/^\s*\[[^\]]{1,20}\]\s*\[(?:오전|오후|AM|PM)\s*\d{1,2}:\d{2}\]\s*/i, '')
+      .replace(/^\s*\d{4}\s*[.년]\s*\d{1,2}\s*[.월]\s*\d{1,2}\s*[.일]?\s*(?:(?:오전|오후)\s*)?\d{1,2}:\d{2}\s*,\s*[^:]{1,20}?\s*:\s*/, '')
+      .replace(/^\s*\[\s*쿠팡\s*\]\s*/, '')
+      .replace(/^\s*(?:[-–—*•·・▪▫◦☐☑✔✓✅▶►>]+|[○●□■◆◇]+(?=\s)|\d{1,2}[.)](?!\d)|\(\d{1,2}\)|[①-⑳])\s*/, '') // ○○빌딩 의 ○ 는 글머리가 아니다
+      .trim();
+  }
+  var RE_SKIP = /^(?:-{2,}.*-{2,}|={2,}.*|\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*\S*요일|저장한 날짜\s*:.*|.*님과 카카오톡 대화.*|(?:사진|동영상|이모티콘|파일|샵검색)(?:\s*\d+장)?|삭제된 메시지입니다\.?|.*쿠팡(?:을|에서)?\s*(?:추천|확인|공유).*)$/;
+  var RE_TALK = /(부탁|감사|수고|안녕|확인|드립니다|드려요|입니다|합니다|해요|해주세요|주세요|할게요|하세요|있어요|없어요|됐어요|맞아요|네요|어요|까요|나요|죠|ㅎㅎ|ㅋㅋ|\?|？)[.!~^ㅎㅋ]*$/;
+  var SITE_TAIL = /\s*(?:발주|주문|요청|물품|비품|청소용품|소모품)(?:\s*(?:목록|리스트|건))?(?:\s*(?:부탁드립니다|부탁드려요|입니다|이요|요))?[.!:：]*$/;
+
+  // text → { items: [{name, qty, link, site, on, known, guess}], sites: [...] }
+  // known.names: {norm(품명): {name, link, unit}}, known.sites: {norm(현장): 현장}
+  function parseMemo(text, known) {
+    known = known || {};
+    var names = known.names || {}, sites = known.sites || {};
+    var out = [], site = '', seenSites = [], waitLink = '';
+    var lookup = function (n) { return names[norm(n)] || names[norm(n.replace(/[()\[\]]/g, ''))] || null; };
+    var siteOfLine = function (s) {
+      var m;
+      if ((m = s.match(/^(?:현장명?|장소|매장|지점|건물)\s*[:：]\s*(.+)$/))) return m[1].trim();
+      if ((m = s.match(/^[\[【<《〈「『](.+?)[\]】>》〉」』]\s*[:：]?$/)) && !splitQty(m[1])) return m[1].trim();
+      if ((m = s.match(/^(.+?)\s*[:：]$/)) && !splitQty(m[1]) && !lookup(m[1])) return m[1].trim();
+      var bare = s.replace(SITE_TAIL, '').trim();
+      if (bare && sites[norm(bare)]) return sites[norm(bare)];
+      return '';
+    };
+    var push = function (name, n, u, link, on) {
+      name = name.replace(/^["'“”‘’]+|["'“”‘’,.]+$/g, '').trim();
+      if (!name) return;
+      var k = lookup(name);
+      if (k) name = k.name;
+      out.push({
+        name: name.slice(0, 80), qty: (n || 1) + (u || (k && k.unit) || '개'), guess: !n,
+        link: link || (k && k.link) || '', site: site, on: on !== false, known: !!k,
+      });
+    };
+    String(text || '').split(/\r?\n/).forEach(function (raw) {
+      if (RE_SKIP.test(raw.trim())) return;
+      var line = stripChat(raw);
+      if (!line || (RE_SKIP.test(line) && !/https?:\/\//.test(line))) return;
+      var url = extractUrl(line);
+      if (url) {
+        url = cleanLink(url);
+        var rest = line.replace(/https?:\/\/\S+/g, ' ').replace(/\s+/g, ' ').trim();
+        var nm = rest ? (nameFromShare(rest) || rest) : '';
+        if (!nm) { // 주소만 있는 줄 → 바로 위 물건(링크 없는 것)에 붙인다. 위에 없으면 다음 물건에
+          var prev = out.length ? out[out.length - 1] : null;
+          if (prev && !prev.linkSet) { prev.link = url; prev.linkSet = true; } else waitLink = url;
+          return;
+        }
+        var q0 = lookup(nm) ? null : splitQty(nm);
+        push(q0 ? q0.name : nm, q0 && q0.n, q0 && q0.u, url);
+        out[out.length - 1].linkSet = true;
+        return;
+      }
+      // 현장 + 물건이 한 줄: '○○빌딩: 윈덱스 2개' (왼쪽이 아는 현장일 때만)
+      var sm = line.match(/^(.+?)\s*[:：]\s*(.+)$/);
+      if (sm && sites[norm(sm[1])]) { site = sites[norm(sm[1])]; if (seenSites.indexOf(site) < 0) seenSites.push(site); line = sm[2]; }
+      else {
+        var st = siteOfLine(line);
+        if (st) { site = st; if (seenSites.indexOf(site) < 0) seenSites.push(site); return; }
+      }
+      if (lookup(line)) { push(line, 0, '', waitLink); waitLink = ''; return; }
+      // 한 줄에 여러 개: '윈덱스 2개, 락스 3통' (조각마다 수량이 있을 때만 나눈다)
+      var parts = line.split(/\s*[,，、]\s*|\s+\/\s+/).filter(Boolean);
+      if (parts.length > 1 && parts.every(function (p) { var q = splitQty(p); return q && q.u; })) {
+        parts.forEach(function (p) { var q = splitQty(p); push(q.name, q.n, q.u, ''); });
+        return;
+      }
+      var q = splitQty(line);
+      if (q && q.name) { push(q.name, q.n, q.u, waitLink); waitLink = ''; return; }
+      // 수량도 링크도 없는 말(인사·부탁)은 꺼 둔 채로 보여준다
+      var talk = RE_TALK.test(line) || line.length > 40;
+      if (!talk) line = line.replace(/요$/, '');
+      push(line, 0, '', waitLink, !talk); waitLink = '';
+    });
+    out.forEach(function (it) { delete it.linkSet; });
+    return { items: out, sites: seenSites };
+  }
+  function knownForMemo() {
+    var names = {}, sites = {};
+    nameCandidates().forEach(function (c) { names[norm(c.name)] = c; });
+    siteCandidates().forEach(function (c) { sites[norm(c.name)] = c.name; });
+    return { names: names, sites: sites };
+  }
+
+  // 현장의 수취인 (최근 기록 → 명단에 한 명뿐이면 그 사람) + 그 현장에서 쓴 주소
+  function contactOf(site) {
+    if (!site) return null;
+    var c = rcvCandidates().filter(function (x) { return x.site === site; }).sort(function (a, b) { return b.last - a.last || b.uses - a.uses; });
+    if (!c.length || !(c[0].uses > 0 || c.length === 1)) return null;
+    var addr = c[0].addr;
+    if (!addr) state.items.forEach(function (it) { if (!addr && it.site === site && it.addr) addr = it.addr; });
+    return { name: c[0].name, tel: c[0].tel || '', addr: addr || '' };
+  }
+  // 현장·수취인·연락처·주소 칸 (메모 넣기·물품팩 공용)
+  function destHtml(d) {
+    d = d || {};
+    return '<div class="row"><label class="lbl" for="dSite">현장</label><input class="field" id="dSite" list="dlSitesAll" maxlength="40" placeholder="현장 이름 (새 현장이면 직접 적기)" autocomplete="off" value="' + esc(d.site || '') + '"></div>' +
+      '<div class="row dgrid"><div><label class="lbl" for="dRcv">수취인</label><input class="field" id="dRcv" list="dlRcv" maxlength="20" autocomplete="off" value="' + esc(d.rcv || '') + '"></div>' +
+      '<div><label class="lbl" for="dTel">연락처</label><input class="field" id="dTel" inputmode="tel" maxlength="20" autocomplete="off" placeholder="010-0000-0000" value="' + esc(d.tel || '') + '"></div></div>' +
+      '<div class="row"><label class="lbl" for="dAddr">주소</label><input class="field" id="dAddr" maxlength="120" autocomplete="off" value="' + esc(d.addr || '') + '"></div>';
+  }
+  function fillDatalists() {
+    $('dlSitesAll').innerHTML = siteCandidates().sort(function (a, b) { return b.last - a.last || a.name.localeCompare(b.name, 'ko'); })
+      .map(function (c) { return '<option value="' + esc(c.name) + '">'; }).join('');
+    $('dlNamesAll').innerHTML = nameCandidates().sort(function (a, b) { return b.uses - a.uses || a.name.localeCompare(b.name, 'ko'); })
+      .map(function (c) { return '<option value="' + esc(c.name) + '">'; }).join('');
+  }
+  function bindDest(root, onChange) {
+    var s = root.querySelector('#dSite'), r = root.querySelector('#dRcv'), tl = root.querySelector('#dTel'), a = root.querySelector('#dAddr');
+    var auto = { rcv: '', tel: '', addr: '' }; // 저절로 채운 값 — 사람이 고친 값은 덮어쓰지 않는다
+    function rcvList() {
+      var site = s.value.trim();
+      $('dlRcv').innerHTML = rcvCandidates().filter(function (c) { return c.site === site; })
+        .map(function (c) { return '<option value="' + esc(c.name) + '">'; }).join('');
+    }
+    function siteChanged() {
+      rcvList();
+      var c = contactOf(s.value.trim()) || { name: '', tel: '', addr: '' };
+      if (r.value === auto.rcv) r.value = auto.rcv = c.name;
+      if (tl.value === auto.tel) tl.value = auto.tel = c.tel;
+      if (a.value === auto.addr) a.value = auto.addr = c.addr;
+      if (onChange) onChange();
+    }
+    s.addEventListener('change', siteChanged);
+    s.addEventListener('input', function () { if (siteCandidates().some(function (c) { return c.name === s.value.trim(); })) siteChanged(); else if (onChange) onChange(); });
+    r.addEventListener('change', function () {
+      var c = rcvCandidates().filter(function (x) { return x.site === s.value.trim() && x.name === r.value.trim(); })[0];
+      if (c) { if (c.tel) tl.value = c.tel; if (c.addr && !a.value.trim()) a.value = c.addr; }
+    });
+    tl.addEventListener('blur', function () { tl.value = phoneFmt(tl.value); });
+    rcvList();
+    if (s.value.trim() && !r.value.trim()) siteChanged();
+    return function () { return { site: s.value.trim(), rcv: r.value.trim(), tel: phoneFmt(tl.value), addr: a.value.trim() }; };
+  }
+
+  // 여러 줄 등록: 새 서버는 addMany 한 번, 옛 서버는 add 를 하나씩 (같은 cid 라 두 번 적히지 않는다)
+  function addRows(rows) {
+    var now = Date.now();
+    rows = rows.map(function (r) {
+      return { cid: cid(), name: r.name, qty: r.qty, site: r.site || '', rcv: r.rcv || '', tel: r.tel || '', addr: r.addr || '', by: me, memo: r.memo || '', link: r.link || '' };
+    });
+    var temps = rows.map(function (r, i) {
+      return { id: r.cid, t: now - i, site: r.site, name: r.name, qty: r.qty, rcv: r.rcv, tel: r.tel, addr: r.addr, by: me, memo: r.memo, status: '요청',
+        link: r.link || coupangSearch(r.name), custom: !!r.link, pending: true };
+    });
+    state.items = temps.concat(state.items);
+    if (state.tab !== '요청' && state.tab !== '') state.tab = '요청';
+    render();
+    state.writes++;
+    setSync('busy', '저장 중');
+    function oneByOne() {
+      var i = 0;
+      return (function next() {
+        if (i >= rows.length) return rows.length;
+        var req = Object.assign({ action: 'add' }, rows[i++]);
+        setSync('busy', '저장 중 ' + i + '/' + rows.length);
+        return call(req).then(function (r) { if (!r.ok) throw r; return next(); });
+      })();
+    }
+    return call({ action: 'addMany', rows: rows }).then(function (r) {
+      if (r.ok) return r.added + (r.dup || []).length;
+      if (/알 수 없는 요청/.test(r.error || '')) return oneByOne();
+      throw r;
+    }).then(function (n) {
+      state.writes--; state.gen++; state.contactsAt = 0;
+      refresh(true);
+      return n;
+    }, function (e) {
+      state.writes--; state.gen++;
+      state.items = state.items.filter(function (x) { return temps.indexOf(x) < 0; });
+      render(); refresh(true);
+      toast((e && (e.error || e.message)) || '저장 못 했어요. 다시 해주세요.');
+      throw e;
+    });
+  }
+  // 등록하지 않고 발주서 엑셀만 (평소 발주서 모양)
+  function exportRows(rows, label) {
+    var now = Date.now();
+    var items = rows.map(function (r, i) {
+      return { t: now + i, site: r.site || '', name: r.name, qty: r.qty, rcv: r.rcv || '', tel: r.tel || '', addr: r.addr || '', status: '요청', by: me, memo: '',
+        link: r.link || coupangSearch(r.name), custom: !!r.link };
+    });
+    var sites = [];
+    items.forEach(function (it) { if (it.site && sites.indexOf(it.site) < 0) sites.push(it.site); });
+    var name = [label, sites.length === 1 ? sites[0] : sites.length ? '현장' + sites.length + '곳' : '', ymd(new Date())].filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g, '') + '.xlsx';
+    return saveFile(buildWorkbook([orderSheet(items, '발주서')]), name).then(function () { toast('발주서 엑셀을 만들었어요'); });
+  }
+
+  // ── 메모 한꺼번에 넣기 창 ──
+  function openBulk(preset) {
+    fillDatalists();
+    var parsed = { items: [], sites: [] };
+    openSheet(
+      '<h2>📋 메모 한꺼번에 넣기</h2>' +
+      '<p class="sub">카톡에 적어 둔 메모를 통째로 붙여넣으면 한 줄에 물건 하나씩 정리돼요. ' +
+      '<b>현장 이름 줄</b>(예: <code>○○빌딩:</code>)이 있으면 그 아래 물건은 그 현장으로 들어가요.</p>' +
+      '<div class="linkrow"><button type="button" class="smallbtn" id="bPaste" style="flex:1">📋 복사한 메모 붙여넣기</button><button type="button" class="smallbtn" id="bClear">지우기</button></div>' +
+      '<textarea class="field bulkta" id="bText" placeholder="예)&#10;○○빌딩:&#10;윈덱스 2개&#10;락스 3통, 고무장갑 5켤레&#10;https://link.coupang.com/…&#10;&#10;△△센터:&#10;두루마리 휴지(24롤) 2"></textarea>' +
+      '<div id="bOut"></div>' +
+      '<div id="bDest"><h3 class="sec" style="margin-top:18px">현장 · 받는 분 <small id="bDestSub">현장 줄이 없는 물건에 들어가요</small></h3>' + destHtml({ site: $('fSite').value.trim() }) + '</div>' +
+      '<button type="button" class="linkbtn2" id="bPack" style="width:100%;margin-top:14px">📦 이 목록을 물품팩으로 저장</button>' +
+      '<div class="btnrow"><button type="button" class="ghost" id="bXlsx">엑셀만</button><button type="button" class="primary" id="bGo" disabled>등록하기</button></div>',
+      function (root) {
+        $('sheet').scrollTop = 0;
+        var ta = root.querySelector('#bText'), go = root.querySelector('#bGo');
+        var dest = bindDest(root, update);
+        function rowsToSend() {
+          var d = dest(), c = {};
+          return parsed.items.filter(function (it) { return it.on && it.name.trim(); }).map(function (it) {
+            var site = it.site || d.site, who;
+            if (!it.site || it.site === d.site) who = { name: d.rcv, tel: d.tel, addr: d.addr };
+            else who = c[site] || (c[site] = contactOf(site) || { name: '', tel: '', addr: '' });
+            return { name: it.name.trim(), qty: it.qty.trim(), link: it.link, site: site, rcv: who.name, tel: who.tel, addr: who.addr };
+          });
+        }
+        function update() {
+          var rows = rowsToSend();
+          go.disabled = !rows.length;
+          go.textContent = rows.length ? rows.length + '개 등록하기' : '등록하기';
+          root.querySelector('#bXlsx').disabled = !rows.length;
+          var noSite = parsed.items.some(function (it) { return it.on && !it.site; });
+          root.querySelector('#bDestSub').textContent = parsed.sites.length && !noSite ? '현장은 메모에 적힌 대로 들어가요' : '현장 줄이 없는 물건에 들어가요';
+        }
+        function draw() {
+          var html = '', cur = null;
+          if (!parsed.items.length) {
+            html = ta.value.trim() ? '<p class="hint">물건을 못 찾았어요. 한 줄에 하나씩 <b>품명 수량</b> (예: 윈덱스 2개)으로 적어 주세요.</p>' : '';
+          } else {
+            var on = parsed.items.filter(function (x) { return x.on; }).length;
+            html = '<h3 class="sec">정리된 물건 <small>' + on + '개 선택 · 고칠 수 있어요</small></h3><div class="blist">';
+            parsed.items.forEach(function (it, i) {
+              if (it.site !== cur) { cur = it.site; html += '<div class="bsite">' + (cur ? '🏢 ' + esc(cur) : '현장 줄 없음 → 아래 현장으로') + '</div>'; }
+              html += '<div class="brow' + (it.on ? '' : ' off') + '" data-i="' + i + '">' +
+                '<input type="checkbox" aria-label="넣기"' + (it.on ? ' checked' : '') + '>' +
+                '<input class="field bn" value="' + esc(it.name) + '" maxlength="80" aria-label="품명">' +
+                '<input class="field bq' + (it.guess ? ' guess' : '') + '" value="' + esc(it.qty) + '" maxlength="20" aria-label="수량">' +
+                ((it.link || it.known || !it.on) ? '<div class="bm">' + [it.link ? '🔗 상품 링크' : '', it.known ? '✓ 자주 쓰는 품목' : '', !it.on ? '물건이 아닌 말 같아서 뺐어요 — 넣으려면 체크' : ''].filter(Boolean).join(' · ') + '</div>' : '') +
+                '</div>';
+            });
+            html += '</div>';
+          }
+          root.querySelector('#bOut').innerHTML = html;
+          update();
+        }
+        function reparse() { parsed = parseMemo(ta.value, knownForMemo()); draw(); }
+        var tmr;
+        ta.addEventListener('input', function () { clearTimeout(tmr); tmr = setTimeout(reparse, 250); });
+        root.querySelector('#bOut').addEventListener('input', function (e) {
+          var row = e.target.closest('.brow'); if (!row) return;
+          var it = parsed.items[+row.getAttribute('data-i')];
+          if (e.target.classList.contains('bn')) it.name = e.target.value;
+          if (e.target.classList.contains('bq')) { it.qty = e.target.value; e.target.classList.remove('guess'); }
+          update();
+        });
+        root.querySelector('#bOut').addEventListener('change', function (e) {
+          if (e.target.type !== 'checkbox') return;
+          var row = e.target.closest('.brow');
+          parsed.items[+row.getAttribute('data-i')].on = e.target.checked;
+          row.classList.toggle('off', !e.target.checked);
+          var n = parsed.items.filter(function (x) { return x.on; }).length;
+          var sm = root.querySelector('#bOut .sec small'); if (sm) sm.textContent = n + '개 선택 · 고칠 수 있어요';
+          update();
+        });
+        root.querySelector('#bPaste').onclick = function () {
+          if (!(navigator.clipboard && navigator.clipboard.readText)) { ta.focus(); toast('칸을 길게 눌러 붙여넣어 주세요'); return; }
+          navigator.clipboard.readText().then(function (t) { ta.value = t; reparse(); }).catch(function () { ta.focus(); toast('칸을 길게 눌러 붙여넣어 주세요'); });
+        };
+        root.querySelector('#bClear').onclick = function () { ta.value = ''; reparse(); ta.focus(); };
+        root.querySelector('#bXlsx').onclick = function () {
+          var rows = rowsToSend(); if (!rows.length) return;
+          exportRows(rows, '청소용품 발주');
+        };
+        root.querySelector('#bPack').onclick = function () {
+          var rows = rowsToSend();
+          if (!rows.length) { toast('먼저 메모를 붙여넣어 주세요'); return; }
+          var nm = prompt('물품팩 이름', '신규현장 물품팩');
+          if (!nm || !nm.trim()) return;
+          nm = nm.trim().slice(0, 30);
+          loadPacks().catch(function () { return state.packs || []; }).then(function () {
+            var have = (state.packs || []).filter(function (p) { return p.name === nm; })[0];
+            if (have && have.items.length && !confirm('\'' + nm + '\' 팩이 이미 있어요. 이 목록으로 바꿀까요?')) return;
+            return storePack({ name: nm, items: rows.map(function (r) { return { name: r.name, qty: r.qty, link: r.link }; }) }).then(function () {
+              toast('\'' + nm + '\' 팩으로 저장했어요');
+            });
+          }).catch(function (e) { toast((e && (e.error || e.message)) || '팩을 저장하지 못했어요'); });
+        };
+        go.onclick = function () {
+          var rows = rowsToSend(); if (!rows.length) return;
+          var noSite = rows.filter(function (r) { return !r.site; }).length;
+          if (noSite && !confirm('현장이 없는 물건이 ' + noSite + '개 있어요. 그대로 등록할까요?')) return;
+          var d = dest();
+          if (d.site) save('site', d.site);
+          go.disabled = true; go.textContent = '등록 중…';
+          addRows(rows).then(function (n) {
+            closeSheet();
+            toast(n + '개 등록했어요 · 시트에 올라갔어요');
+          }).catch(function () { go.disabled = false; update(); });
+        };
+        if (preset && preset.text) { ta.value = preset.text; reparse(); } else draw();
+      });
+  }
+
+  // ── 물품팩 ──
+  var DEFAULT_PACK = '신규현장 물품팩';
+  function loadPacks() {
+    return call({ action: 'packs' }).then(function (r) {
+      if (r.ok) {
+        state.packMode = 'server';
+        state.packs = r.packs || [];
+        save('packs', state.packs);
+        // 서버가 새 코드로 바뀌기 전에 이 휴대폰에만 만든 팩 → 올린다
+        var local = load('packsLocal', null);
+        if (!local || !local.length) return state.packs;
+        var have = {};
+        state.packs.forEach(function (p) { have[p.name] = 1; });
+        save('packsLocal', null);
+        return local.filter(function (p) { return !have[p.name] && p.items.length; }).reduce(function (pr, p) {
+          return pr.then(function () { return call({ action: 'savePack', name: p.name, items: p.items }).then(function (x) { if (x.ok) state.packs = x.packs; }); });
+        }, Promise.resolve()).then(function () { save('packs', state.packs); return state.packs; });
+      }
+      if (/알 수 없는 요청/.test(r.error || '')) { state.packMode = 'local'; state.packs = load('packsLocal', []) || []; return state.packs; }
+      throw r;
+    });
+  }
+  function storePack(pack, old) {
+    var clean = { name: pack.name, items: pack.items.filter(function (x) { return x.name && x.name.trim(); }).map(function (x) { return { name: x.name.trim(), qty: (x.qty || '').trim(), link: x.link || '' }; }) };
+    if (state.packMode === 'local') {
+      var list = (state.packs || []).slice(), at = -1;
+      list.forEach(function (p, i) { if (p.name === (old || clean.name)) at = i; });
+      if (list.some(function (p, i) { return p.name === clean.name && i !== at; })) return Promise.reject({ error: '같은 이름의 팩이 이미 있어요' });
+      if (at >= 0) list[at] = clean; else list.push(clean);
+      state.packs = list; save('packsLocal', list);
+      return Promise.resolve(list);
+    }
+    return call({ action: 'savePack', name: clean.name, old: old || '', items: clean.items }).then(function (r) {
+      if (r.ok) { state.packs = r.packs; save('packs', r.packs); return r.packs; }
+      if (/알 수 없는 요청/.test(r.error || '')) { state.packMode = 'local'; state.packs = load('packsLocal', []) || []; return storePack(pack, old); }
+      throw r;
+    });
+  }
+  function dropPack(name) {
+    if (state.packMode === 'local') {
+      state.packs = (state.packs || []).filter(function (p) { return p.name !== name; });
+      save('packsLocal', state.packs);
+      return Promise.resolve(state.packs);
+    }
+    return call({ action: 'removePack', name: name }).then(function (r) {
+      if (!r.ok) throw r;
+      state.packs = r.packs; save('packs', r.packs); return r.packs;
+    });
+  }
+  // 자주 시킨 물건: 기록에서 여러 번 나온 품목 순 (수량은 가장 많이 쓴 것)
+  function frequentItems(max) {
+    var map = {};
+    state.items.forEach(function (it) {
+      var k = norm(it.name); if (!k) return;
+      var g = map[k] || (map[k] = { name: it.name, count: 0, qtys: {}, link: '', last: 0 });
+      g.count++;
+      if (it.qty) g.qtys[it.qty] = (g.qtys[it.qty] || 0) + 1;
+      if ((it.t || 0) >= g.last) { g.last = it.t || 0; g.name = it.name; if (it.custom) g.link = cleanLink(it.link); }
+    });
+    return Object.keys(map).map(function (k) { return map[k]; })
+      .sort(function (a, b) { return b.count - a.count || b.last - a.last; }).slice(0, max || 20)
+      .map(function (g) {
+        var q = Object.keys(g.qtys).sort(function (a, b) { return g.qtys[b] - g.qtys[a]; })[0] || '1개';
+        return { name: g.name, qty: q, link: g.link, count: g.count };
+      });
+  }
+  function packModeNote() {
+    return state.packMode === 'local'
+      ? '<div class="note">⚠️ 지금은 <b>이 휴대폰에만</b> 저장돼요. 서버 코드를 새로 붙여넣으면(⋮ → 서버 코드) 시트 <b>물품팩</b> 탭에 저장되고 지역장님 휴대폰에도 보여요.</div>'
+      : state.packMode === 'server' ? '<p class="hint">시트 <b>물품팩</b> 탭에 저장돼요 · 함께 쓰는 휴대폰에서 같이 보여요</p>' : '';
+  }
+  function openPacks() {
+    function body(loading) {
+      var packs = (state.packs || []).slice();
+      if (!packs.some(function (p) { return p.name === DEFAULT_PACK; }) && !packs.length) packs.unshift({ name: DEFAULT_PACK, items: [], virtual: true });
+      return '<h2>📦 물품팩</h2>' +
+        '<p class="sub">자주 시키는 물건 묶음이에요. 팩을 누르고 <b>현장만 적으면</b> 바로 발주서 엑셀이 나와요.</p>' +
+        (loading ? '<p class="hint">불러오는 중…</p>' : packModeNote()) +
+        '<div class="packs">' + packs.map(function (p) {
+          return '<button type="button" class="pack" data-p="' + esc(p.name) + '"><span class="pt"><b>' + esc(p.name) + '</b><span>' + (p.items.length ? p.items.length + '가지' : '비어 있음') + '</span></span>' +
+            '<small>' + (p.items.length ? esc(p.items.slice(0, 6).map(function (x) { return x.name; }).join(' · ')) + (p.items.length > 6 ? ' …' : '') : '눌러서 물건을 담아 주세요') + '</small></button>';
+        }).join('') + '</div>' +
+        '<button type="button" class="outline" id="pkNew" style="margin-top:12px">+ 새 팩 만들기</button>';
+    }
+    openSheet(body(!state.packMode), function (root) {
+      $('sheet').scrollTop = 0;
+      function bind() {
+        root.querySelectorAll('.pack').forEach(function (b) {
+          b.onclick = function () {
+            var nm = b.getAttribute('data-p');
+            var p = (state.packs || []).filter(function (x) { return x.name === nm; })[0] || { name: nm, items: [], virtual: true };
+            openPack(p);
+          };
+        });
+        root.querySelector('#pkNew').onclick = function () {
+          var nm = prompt('새 팩 이름', (state.packs || []).length ? '' : DEFAULT_PACK);
+          if (!nm || !nm.trim()) return;
+          nm = nm.trim().slice(0, 30);
+          if ((state.packs || []).some(function (p) { return p.name === nm; })) { toast('같은 이름의 팩이 이미 있어요'); return; }
+          openPack({ name: nm, items: [], virtual: true });
+        };
+      }
+      bind();
+      loadPacks().then(function () {
+        if (!$('sheet').classList.contains('on') || !root.querySelector('#pkNew')) return;
+        root.innerHTML = body(false); bind();
+      }).catch(function (e) { toast((e && (e.error || e.message)) || '물품팩을 못 불러왔어요'); });
+    });
+  }
+  function openPack(pack) {
+    fillDatalists();
+    var p = { name: pack.name, items: pack.items.map(function (x) { return { name: x.name, qty: x.qty, link: x.link || '' }; }) };
+    var saved = !pack.virtual, savedName = pack.virtual ? '' : pack.name, tmr = null, saving = Promise.resolve();
+    var sites = {};
+    state.items.forEach(function (it) { if (it.site) sites[it.site] = (sites[it.site] || 0) + 1; });
+    openSheet(
+      '<button type="button" class="back" id="pBack" style="padding-top:0">← 물품팩 목록</button>' +
+      '<div class="ptitle"><h2 id="pTitle">📦 ' + esc(p.name) + '</h2><button type="button" class="linkbtn2" id="pRename">이름 바꾸기</button></div>' +
+      '<p class="hint" id="pSaved">' + (saved ? '고치면 저절로 저장돼요' : '물건을 담으면 저장돼요') + '</p>' +
+      '<div id="pList"></div>' +
+      '<div class="linkrow" style="margin-top:8px"><input class="field" id="pAdd" list="dlNamesAll" placeholder="물건 추가 (목록에서 고르거나 직접)" maxlength="80" autocomplete="off"><button type="button" class="smallbtn" id="pAddBtn">추가</button></div>' +
+      '<div class="pfill">' +
+      '<button type="button" class="chip" id="pFreq">⭐ 자주 시킨 것</button>' +
+      '<button type="button" class="chip" id="pMemo">📋 메모로 채우기</button>' +
+      (Object.keys(sites).length ? '<button type="button" class="chip" id="pFromSite">🏢 현장 기록에서</button>' : '') +
+      '</div>' +
+      '<div id="pFillBox"></div>' +
+      '<h3 class="sec" style="margin-top:22px">이 팩으로 발주하기 <small>새 현장 이름을 적어 주세요</small></h3>' +
+      destHtml({}) +
+      '<button type="button" class="linkbtn2 danger" id="pDel" style="width:100%;margin-top:14px">이 팩 지우기</button>' +
+      '<div class="btnrow"><button type="button" class="ghost" id="pReg">시트에 등록</button><button type="button" class="primary" id="pXlsx">엑셀로 받기</button></div>',
+      function (root) {
+        $('sheet').scrollTop = 0;
+        var dest = bindDest(root);
+        function draw() {
+          root.querySelector('#pList').innerHTML = p.items.length
+            ? '<div class="blist">' + p.items.map(function (it, i) {
+              return '<div class="brow prow" data-i="' + i + '"><input class="field bn" value="' + esc(it.name) + '" maxlength="80" aria-label="품명">' +
+                '<input class="field bq" value="' + esc(it.qty) + '" maxlength="20" aria-label="수량">' +
+                '<button type="button" class="x" aria-label="빼기">×</button>' +
+                (it.link ? '<div class="bm">🔗 상품 링크</div>' : '') + '</div>';
+            }).join('') + '</div>'
+            : '<div class="pempty">아직 비어 있어요.<br>아래 <b>⭐ 자주 시킨 것</b>을 누르면 기록에서 많이 시킨 물건으로 채워져요.</div>';
+          var n = p.items.length;
+          root.querySelector('#pXlsx').textContent = n ? '엑셀로 받기 (' + n + '가지)' : '엑셀로 받기';
+          root.querySelector('#pXlsx').disabled = !n; root.querySelector('#pReg').disabled = !n;
+        }
+        function persist(now) {
+          clearTimeout(tmr);
+          var go = function () {
+            if (!p.items.length && !saved) return;
+            var el = root.querySelector('#pSaved');
+            el.textContent = '저장 중…';
+            saving = saving.then(function () {
+              return storePack(p, savedName).then(function () {
+                saved = true; savedName = p.name;
+                el.textContent = state.packMode === 'local' ? '이 휴대폰에 저장했어요' : '저장했어요 · 시트 물품팩 탭';
+              }, function (e) { el.textContent = '저장 못 했어요: ' + ((e && (e.error || e.message)) || '연결 실패'); });
+            });
+          };
+          if (now) go(); else tmr = setTimeout(go, 700);
+        }
+        function addItems(list, replaceAsk) {
+          var have = {};
+          p.items.forEach(function (x) { have[norm(x.name)] = 1; });
+          var n = 0;
+          list.forEach(function (x) { if (!have[norm(x.name)]) { have[norm(x.name)] = 1; p.items.push({ name: x.name, qty: x.qty || '1개', link: x.link || '' }); n++; } });
+          draw(); persist();
+          toast(n ? n + '가지 담았어요' : '이미 다 들어 있어요');
+        }
+        root.querySelector('#pList').addEventListener('input', function (e) {
+          var row = e.target.closest('.brow'); if (!row) return;
+          var it = p.items[+row.getAttribute('data-i')];
+          if (e.target.classList.contains('bn')) it.name = e.target.value;
+          if (e.target.classList.contains('bq')) it.qty = e.target.value;
+          persist();
+        });
+        root.querySelector('#pList').addEventListener('click', function (e) {
+          var x = e.target.closest('.x'); if (!x) return;
+          p.items.splice(+x.closest('.brow').getAttribute('data-i'), 1);
+          draw(); persist();
+        });
+        function addOne() {
+          var inp = root.querySelector('#pAdd'), v = inp.value.trim();
+          if (!v) { inp.focus(); return; }
+          var q = splitQty(v), nm = q && q.u ? q.name : v;
+          var k = nameCandidates().filter(function (c) { return norm(c.name) === norm(nm); })[0];
+          addItems([{ name: k ? k.name : nm, qty: q && q.u ? q.n + q.u : '1' + ((k && k.unit) || '개'), link: (k && k.link) || '' }]);
+          inp.value = ''; inp.focus();
+        }
+        root.querySelector('#pAddBtn').onclick = addOne;
+        root.querySelector('#pAdd').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addOne(); } });
+        root.querySelector('#pFreq').onclick = function () {
+          var f = frequentItems(20);
+          if (!f.length) { toast('아직 기록이 없어요. 메모로 채워 보세요'); return; }
+          var box = root.querySelector('#pFillBox');
+          box.innerHTML = '<div class="fillbox"><b>기록에서 많이 시킨 순</b> — 넣을 것만 체크하세요<div class="blist" style="margin-top:8px">' + f.map(function (x, i) {
+            return '<label class="brow frow"><input type="checkbox" data-i="' + i + '"' + (i < 12 ? ' checked' : '') + '><span>' + esc(x.name) + '</span><span class="fq">' + esc(x.qty) + ' · ' + x.count + '번</span></label>';
+          }).join('') + '</div><button type="button" class="primary" id="pFreqGo" style="height:48px;margin-top:10px">체크한 것 담기</button></div>';
+          box.querySelector('#pFreqGo').onclick = function () {
+            var pick = [];
+            box.querySelectorAll('input[type=checkbox]').forEach(function (c) { if (c.checked) pick.push(f[+c.getAttribute('data-i')]); });
+            box.innerHTML = '';
+            addItems(pick);
+          };
+        };
+        root.querySelector('#pMemo').onclick = function () {
+          var box = root.querySelector('#pFillBox');
+          box.innerHTML = '<div class="fillbox"><b>메모를 붙여넣으세요</b> — 한 줄에 하나씩 (예: 윈덱스 2개)' +
+            '<textarea class="field bulkta" id="pMemoTa" style="margin-top:8px"></textarea>' +
+            '<button type="button" class="primary" id="pMemoGo" style="height:48px;margin-top:10px">담기</button></div>';
+          var ta = box.querySelector('#pMemoTa');
+          ta.focus();
+          box.querySelector('#pMemoGo').onclick = function () {
+            var r = parseMemo(ta.value, knownForMemo()).items.filter(function (x) { return x.on; });
+            if (!r.length) { toast('물건을 못 찾았어요'); return; }
+            box.innerHTML = '';
+            addItems(r);
+          };
+        };
+        var fs = root.querySelector('#pFromSite');
+        if (fs) fs.onclick = function () {
+          var box = root.querySelector('#pFillBox');
+          var list = Object.keys(sites).sort(function (a, b) { return sites[b] - sites[a] || a.localeCompare(b, 'ko'); });
+          box.innerHTML = '<div class="fillbox"><b>이 현장에 들어간 물건을 그대로</b>' +
+            '<select class="field" id="pSiteSel" style="margin-top:8px">' + list.map(function (s) { return '<option>' + esc(s) + '</option>'; }).join('') + '</select>' +
+            '<button type="button" class="primary" id="pSiteGo" style="height:48px;margin-top:10px">담기</button></div>';
+          box.querySelector('#pSiteGo').onclick = function () {
+            var s = box.querySelector('#pSiteSel').value;
+            var its = state.items.filter(function (it) { return it.site === s; }).sort(function (a, b) { return (b.t || 0) - (a.t || 0); });
+            box.innerHTML = '';
+            addItems(its.map(function (it) { return { name: it.name, qty: it.qty, link: it.custom ? cleanLink(it.link) : '' }; }));
+          };
+        };
+        root.querySelector('#pRename').onclick = function () {
+          var nm = prompt('팩 이름', p.name);
+          if (!nm || !nm.trim() || nm.trim() === p.name) return;
+          nm = nm.trim().slice(0, 30);
+          if ((state.packs || []).some(function (x) { return x.name === nm && x.name !== savedName; })) { toast('같은 이름의 팩이 이미 있어요'); return; }
+          p.name = nm;
+          root.querySelector('#pTitle').textContent = '📦 ' + nm;
+          if (saved) persist(true);
+        };
+        root.querySelector('#pDel').onclick = function () {
+          if (!saved) { openPacks(); return; }
+          if (!confirm('\'' + p.name + '\' 팩을 지울까요?')) return;
+          clearTimeout(tmr);
+          saving.then(function () { return dropPack(savedName); }).then(function () { toast('지웠어요'); openPacks(); })
+            .catch(function (e) { toast((e && (e.error || e.message)) || '지우지 못했어요'); });
+        };
+        root.querySelector('#pBack').onclick = function () { if (tmr) persist(true); saving.then(openPacks); };
+        function rows() {
+          var d = dest();
+          return p.items.filter(function (x) { return x.name.trim(); }).map(function (x) {
+            return { name: x.name.trim(), qty: (x.qty || '').trim(), link: x.link, site: d.site, rcv: d.rcv, tel: d.tel, addr: d.addr };
+          });
+        }
+        function needSite() {
+          if (dest().site) return false;
+          toast('현장 이름을 적어 주세요'); root.querySelector('#dSite').focus(); return true;
+        }
+        root.querySelector('#pXlsx').onclick = function () {
+          if (needSite()) return;
+          if (tmr) persist(true);
+          exportRows(rows(), p.name);
+        };
+        root.querySelector('#pReg').onclick = function () {
+          if (needSite()) return;
+          var r = rows();
+          if (!confirm('\'' + r[0].site + '\' 현장으로 ' + r.length + '가지를 시트에 등록할까요?')) return;
+          if (tmr) persist(true);
+          var b = root.querySelector('#pReg'); b.disabled = true; b.textContent = '등록 중…';
+          addRows(r).then(function (n) { closeSheet(); toast(n + '가지 등록했어요 · 시트에 올라갔어요'); })
+            .catch(function () { b.disabled = false; b.textContent = '시트에 등록'; });
+        };
+        draw();
+      });
+  }
+  window.__sup = { parseMemo: parseMemo, splitQty: splitQty }; // 테스트용
+
   function shareLink() {
     var c = btoa(JSON.stringify({ u: cfg.u || '', k: cfg.k })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     if (GAS) return null; // Apps Script 화면 안에서는 주소를 알 수 없다 → 시트 메뉴에서 만든다
@@ -1805,6 +2475,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
       (link ? '<button class="linkbtn" id="mShare">함께 볼 사람에게 링크 보내기<small>카카오톡으로 보내면 그 휴대폰도 바로 연결돼요</small></button>' : '') +
       '<a class="linkbtn" id="mSheet" href="#" target="_blank" rel="noopener" style="text-decoration:none">구글 시트 열기<small id="mSheetSub">주소 확인 중…</small></a>' +
       '<button class="linkbtn" id="mImport">근무자 명단 올리기<small>오션 근무자 파일을 고르면 현장·성함·번호 목록이 바뀌어요</small></button>' +
+      '<button class="linkbtn" id="mBulk">메모 한꺼번에 넣기<small>카톡 메모를 붙여넣으면 한 줄에 하나씩 정리돼요</small></button>' +
+      '<button class="linkbtn" id="mPack">물품팩<small>신규현장 물품팩처럼 자주 시키는 묶음 → 바로 엑셀</small></button>' +
       '<button class="linkbtn" id="mXlsx">엑셀로 내보내기<small>기간·상태·현장을 골라 .xlsx 파일로 받아요</small></button>' +
       '<button class="linkbtn" id="mRefresh">지금 새로고침<small>' + esc(state.err ? '오류: ' + state.err : '기록은 15초마다, 근무자 명단은 5분마다 저절로 읽어요. 누르면 둘 다 지금 읽어요') + '</small></button>' +
       '<div class="linkbtn" style="cursor:default">서버 코드<small>' + esc(serverLabel()) + '</small>' +
@@ -1820,6 +2492,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
           else copy(link).then(function () { toast('링크를 복사했어요. 카카오톡에 붙여넣으세요'); });
         };
         root.querySelector('#mXlsx').onclick = openExport;
+        root.querySelector('#mBulk').onclick = function () { openBulk(); };
+        root.querySelector('#mPack').onclick = openPacks;
         root.querySelector('#mImport').onclick = openImport;
         var ms = root.querySelector('#mSheet');
         ms.onclick = function (e) { if (ms.getAttribute('href') === '#') e.preventDefault(); };
@@ -2151,7 +2825,7 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
 
   function showApp() {
     $('setupView').hidden = true;
-    $('addForm').hidden = false; $('listView').hidden = false; $('menuBtn').hidden = false; $('xlsxBtn').hidden = false;
+    $('addForm').hidden = false; $('quickRow').hidden = false; $('listView').hidden = false; $('menuBtn').hidden = false; $('xlsxBtn').hidden = false;
     $('fSite').value = load('site', '');
     $('fRcv').value = load('rcv', ''); $('fTel').value = load('tel', ''); $('fAddr').value = load('addr', '');
     renderUnits(); render();
@@ -2299,6 +2973,8 @@ textarea.code { width: 100%; height: 120px; font: 11px/1.4 ui-monospace, Menlo, 
   $('scrim').onclick = closeSheet;
   $('menuBtn').onclick = openMenu;
   $('xlsxBtn').onclick = openExport;
+  $('bulkBtn').onclick = function () { openBulk(); };
+  $('packBtn').onclick = openPacks;
   $('goInstall').onclick = showInstall;
   $('installBack').onclick = showSetup;
   $('manualToggle').onclick = function () {

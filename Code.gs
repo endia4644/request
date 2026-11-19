@@ -17,7 +17,7 @@
 
 // 서버 코드 버전 — 고칠 때마다 올린다. 브라우저로 <웹 앱 주소>?action=version 을 열면 팀 코드 없이 이 값이 보인다.
 // 앱(index.html)의 SERVER_LATEST 와 같으면 최신.
-const SERVER_VERSION = '2026-11-17b'; // b: 쿠팡 칸에 '쿠팡 상품' 대신 주소 전체를 보여줌
+const SERVER_VERSION = '2026-11-19'; // 메모 한꺼번에 등록(addMany) · 물품팩(packs/savePack/removePack, '물품팩' 탭)
 
 const CFG = {
   SHEET: '청소용품',
@@ -39,6 +39,9 @@ const COL = { TIME: 1, SITE: 2, NAME: 3, LINK: 4, IMG: 5, QTY: 6, RCV: 7, TEL: 8
 const CONTACT_SHEET = '수취인';
 const CONTACT_HEAD = ['구분', '현장', '이름', '전화번호', '주소'];
 const STATUSES = ['요청', '주문완료', '입고완료'];
+const PACK_SHEET = '물품팩'; // 자주 시키는 물건 묶음 (예: 신규현장 물품팩). 한 줄 = 팩 이름|품목|수량|쿠팡 링크
+const PACK_HEAD = ['팩 이름', '품목', '수량', '쿠팡 링크'];
+const PACK_MAX = { packs: 30, items: 80, bulk: 100 };
 const LIMIT = { name: 80, site: 40, qty: 20, by: 20, memo: 300, link: 500, rcv: 20, tel: 20, addr: 120 };
 
 const COLOR = {
@@ -117,6 +120,10 @@ function handle_(req) {
       case 'remove': return withLock_(() => removeItem_(req));
       case 'thumb': return thumbItem_(req);
       case 'importContacts': return withLock_(() => importContacts_(req));
+      case 'addMany': return withLock_(() => addMany_(req));
+      case 'packs': return { ok: true, packs: readPacks_() };
+      case 'savePack': return withLock_(() => savePack_(req));
+      case 'removePack': return withLock_(() => removePack_(req));
       default: return { ok: false, error: '알 수 없는 요청: ' + req.action };
     }
   } catch (err) {
@@ -287,7 +294,7 @@ function contactHeader_(row, data) {
 function readContacts_() {
   contactSheet_(); // 없으면 만들어 둔다 (새 수취인을 적을 자리)
   const ss = ss_();
-  const sheets = ss.getSheets().filter((sh) => sh.getName() !== CFG.SHEET)
+  const sheets = ss.getSheets().filter((sh) => sh.getName() !== CFG.SHEET && sh.getName() !== PACK_SHEET)
     .sort((a, b) => (b.getName() === CONTACT_SHEET) - (a.getName() === CONTACT_SHEET));
   const out = [];
   const seen = {};
@@ -439,6 +446,47 @@ function addItem_(req) {
   return { ok: true, id, row };
 }
 
+/**
+ * 여러 줄 한꺼번에 등록 (카톡 메모 붙여넣기). rows: [{cid, name, qty, site, rcv, tel, addr, by, memo, link}]
+ * 한 번에 setValues 로 적는다. 같은 cid 가 이미 있으면 건너뛴다(전송 재시도). 품명 없는 줄은 errors 로.
+ */
+function addMany_(req) {
+  const rows = Array.isArray(req.rows) ? req.rows.slice(0, PACK_MAX.bulk) : [];
+  if (!rows.length) return { ok: false, error: '등록할 물건이 없어요' };
+  const sh = sheet_();
+  const have = {};
+  readRows_(sh).forEach((r) => { have[String(r.values[COL.ID - 1])] = 1; });
+  const now = new Date();
+  const out = [], ids = [], errors = [], dup = [];
+  const contacts = {};
+  rows.forEach((src, i) => {
+    const it = cleanInput(src || {}, true);
+    if (it.error) { errors.push({ i, error: it.error }); return; }
+    const okCid = src.cid && /^[A-Za-z0-9_-]{6,40}$/.test(String(src.cid));
+    if (okCid && have[String(src.cid)]) { dup.push(String(src.cid)); return; }
+    const id = okCid ? String(src.cid) : newId_();
+    have[id] = 1;
+    const vals = new Array(HEAD.length).fill('');
+    vals[COL.TIME - 1] = now;
+    vals[COL.SITE - 1] = safeText(it.site);
+    vals[COL.NAME - 1] = safeText(it.name);
+    vals[COL.LINK - 1] = linkFormula(it.link || coupangSearchUrl(it.name), it.link ? linkLabel(it.link) : '쿠팡에서 찾기');
+    vals[COL.QTY - 1] = safeText(it.qty);
+    vals[COL.RCV - 1] = safeText(it.rcv);
+    vals[COL.TEL - 1] = safeText(it.tel);
+    vals[COL.ADDR - 1] = safeText(it.addr);
+    vals[COL.BY - 1] = safeText(it.by);
+    vals[COL.STATUS - 1] = '요청';
+    vals[COL.MEMO - 1] = safeText(it.memo);
+    vals[COL.ID - 1] = id;
+    out.push(vals); ids.push(id);
+    if (it.rcv) contacts[it.site + '|' + it.rcv] = it;
+  });
+  if (out.length) sh.getRange(sh.getLastRow() + 1, 1, out.length, HEAD.length).setValues(out);
+  Object.keys(contacts).forEach((k) => { const c = contacts[k]; upsertContact_(c.site, c.rcv, c.tel, c.addr); });
+  return { ok: true, ids, added: ids.length, dup, errors };
+}
+
 function updateItem_(req) {
   const sh = sheet_();
   const r = findRow_(sh, req.id);
@@ -544,6 +592,85 @@ function removeItem_(req) {
   if (!r) return { ok: true, gone: true };
   sh.deleteRow(r.row);
   return { ok: true };
+}
+
+// ═════════════════════════════════════════════════════════════
+// 물품팩 — 자주 시키는 물건 묶음 ('물품팩' 탭. 시트에서 직접 고쳐도 된다)
+// ═════════════════════════════════════════════════════════════
+
+function packSheet_(create) {
+  const ss = ss_();
+  let sh = ss.getSheetByName(PACK_SHEET);
+  if (!sh && create) {
+    sh = ss.insertSheet(PACK_SHEET);
+    sh.getRange(1, 1, 1, PACK_HEAD.length).setValues([PACK_HEAD]).setFontWeight('bold').setBackground(COLOR.head).setFontColor('#ffffff');
+    sh.setFrozenRows(1);
+    sh.getRange('C:C').setNumberFormat('@'); // 수량 '1/2' 같은 글자가 날짜로 바뀌지 않게
+    sh.setColumnWidth(1, 140); sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 70); sh.setColumnWidth(4, 360);
+  }
+  return sh;
+}
+
+/** [{name, items:[{name, qty, link}]}] — 탭에 적힌 순서대로. 품목 칸이 빈 줄은 '빈 팩' 자리 */
+function readPacks_() {
+  const sh = packSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, PACK_HEAD.length).getValues();
+  const order = [], by = {};
+  vals.forEach((v) => {
+    const p = String(v[0] == null ? '' : v[0]).trim();
+    if (!p) return;
+    if (!by[p]) { by[p] = { name: p, items: [] }; order.push(p); }
+    const name = String(v[1] == null ? '' : v[1]).trim();
+    if (name) by[p].items.push({ name, qty: String(v[2] == null ? '' : v[2]).trim(), link: extractUrl(String(v[3] == null ? '' : v[3])) });
+  });
+  return order.map((k) => by[k]);
+}
+
+function writePacks_(packs) {
+  const sh = packSheet_(true);
+  const last = sh.getLastRow();
+  if (last >= 2) sh.getRange(2, 1, last - 1, PACK_HEAD.length).clearContent();
+  const rows = [];
+  packs.forEach((p) => {
+    if (!p.items.length) rows.push([safeText(p.name), '', '', '']);
+    p.items.forEach((it) => rows.push([safeText(p.name), safeText(it.name), safeText(it.qty), it.link]));
+  });
+  if (rows.length) sh.getRange(2, 1, rows.length, PACK_HEAD.length).setValues(rows);
+}
+
+function cleanPack_(req) {
+  const name = clip_(req.name, 30).replace(/\s*\n\s*/g, ' ');
+  if (!name) return { error: '팩 이름을 적어주세요' };
+  const items = [];
+  (Array.isArray(req.items) ? req.items : []).slice(0, PACK_MAX.items).forEach((src) => {
+    const n = clip_(src && src.name, LIMIT.name).replace(/\s*\n\s*/g, ' ');
+    if (!n) return;
+    items.push({ name: n, qty: clip_(src.qty, LIMIT.qty), link: extractUrl(clip_(src.link, LIMIT.link)) });
+  });
+  return { name, items };
+}
+
+/** {name, old?, items} — old 가 있으면 그 팩을 바꾼다(이름 바꾸기 포함), 없으면 같은 이름 팩을 바꾸거나 새로 만든다 */
+function savePack_(req) {
+  const p = cleanPack_(req);
+  if (p.error) return { ok: false, error: p.error };
+  const packs = readPacks_();
+  const old = clip_(req.old, 30);
+  const at = packs.findIndex((x) => x.name === (old || p.name));
+  if (packs.some((x, i) => x.name === p.name && i !== at)) return { ok: false, error: '같은 이름의 팩이 이미 있어요' };
+  if (at >= 0) packs[at] = p;
+  else if (packs.length >= PACK_MAX.packs) return { ok: false, error: '팩은 ' + PACK_MAX.packs + '개까지예요' };
+  else packs.push(p);
+  writePacks_(packs);
+  return { ok: true, packs };
+}
+
+function removePack_(req) {
+  const name = clip_(req.name, 30);
+  const packs = readPacks_().filter((x) => x.name !== name);
+  writePacks_(packs);
+  return { ok: true, packs };
 }
 
 function findRow_(sh, id) {
