@@ -445,6 +445,14 @@ print(json.dumps({'names': wb.sheetnames, 'cells': {c.coordinate: c.value for r 
     assert.deepEqual(await m.$$eval('#bOut .brow .bq', (els) => els.map((e) => e.value)), ['2개', '3통', '5켤레', '1개', '4개']);
     assert.match(await m.locator('#bOut .brow').nth(2).textContent(), /상품 링크/); // 주소만 있는 줄 → 바로 위 고무장갑
     assert.equal(await m.textContent('#bGo'), '4개 등록하기');
+    // 사용자 메모 형식 (2026-11-24): '· 품명-수량단위', 하이픈 뒤 수량은 단위가 무엇이든
+    const real = await m.evaluate(() => window.__sup.parseMemo('\n\n· 리스킹오일-2통\n· 리스킹걸레-적색-20장\n· 다끄라리스킹걸레(14×60)-5장\n· 핸드타올-2box\n· 락스-2L', {}).items.map((x) => x.name + '|' + x.qty));
+    assert.deepEqual(real, ['리스킹오일|2통', '리스킹걸레-적색|20장', '다끄라리스킹걸레(14×60)|5장', '핸드타올|2박스', '락스-2L|1개']);
+    // 붙여넣기 뒤 input 이벤트가 안 와도 목록이 생긴다
+    await m.evaluate(() => { document.querySelector('#bText').value = '집게 3개'; });
+    await m.waitForFunction(() => document.querySelectorAll('#bOut .brow').length === 1);
+    await m.fill('#bText', MEMO);
+    await m.waitForFunction(() => document.querySelectorAll('#bOut .brow').length === 5);
     await m.locator('#bOut .brow .bq').first().fill('3개'); // 고칠 수 있다
     await m.screenshot({ path: path.join(OUT, '21_bulk.png'), fullPage: false });
     // 엑셀만 (등록 안 함)

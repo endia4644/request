@@ -685,7 +685,7 @@ textarea.bulkta { height: 150px; margin-top: 8px; line-height: 1.5; }
   // 이 화면이 기대하는 서버 코드 버전 (Code.gs 의 SERVER_VERSION). 서버가 이것보다 옛 것이면 맨 위에 안내.
   var SERVER_LATEST = '2026-11-19'; // 11-19: 메모 한꺼번에 등록·물품팩
   // 이 화면(index.html) 버전 — 고칠 때마다 올린다. ⋮ 메뉴 맨 아래에 보인다 (옛 화면이 남아 있는지 확인용)
-  var APP_VERSION = '2026-11-24';
+  var APP_VERSION = '2026-11-24b';
   // 서버 코드가 최신인지 응답 모양으로 판단 (version 이 없던 옛 서버용)
   //   최신(13열): 기록에 addr·img, 수취인에 grp·addr / 어제(11열): rcv 는 있고 addr 없음 / 그 전(9열): rcv 없음
   function serverVersion(r) {
@@ -1860,6 +1860,8 @@ textarea.bulkta { height: 150px; margin-top: 8px; line-height: 1.5; }
   var RE_QP = new RegExp('^(.+?)\\s*[(\\[]\\s*(\\d{1,4})\\s*(' + QTY_U + ')?\\s*[)\\]]$', 'i');
   var RE_QX = new RegExp('^(.*[^\\dA-Za-z])\\s*[xX×*]\\s*(\\d{1,4})\\s*(' + QTY_U + ')?\\s*(?:씩|요)?$', 'i');
   var RE_QN = /^(.+?\D)\s+(\d{1,3})\s*(?:씩|요)?$/;
+  // '리스킹걸레-적색-20장' 처럼 하이픈 뒤 숫자+단위는 단위가 무엇이든 수량 (사용자 메모 형식, 2026-11-24). 2L·500ml 같은 용량은 제외
+  var RE_QD = /^(.+?)\s*[-–—]\s*(\d{1,4})\s*([가-힣a-zA-Z]{1,3})\s*$/;
   var RE_QS = new RegExp('^(\\d{1,4})\\s*(' + QTY_U + ')\\s+(.+)$', 'i');
   function unitOf(u) { u = String(u || ''); return UNIT_ALIAS[u.toLowerCase()] || u; }
   // '윈덱스 2개' → {name:'윈덱스', n:2, u:'개'} / 수량이 없으면 null
@@ -1867,6 +1869,7 @@ textarea.bulkta { height: 150px; margin-top: 8px; line-height: 1.5; }
     var m;
     if ((m = s.match(RE_QS))) return { name: m[3].trim(), n: +m[1], u: unitOf(m[2]) };
     if ((m = s.match(RE_QA))) return { name: m[1].trim(), n: +m[2], u: unitOf(m[3]) };
+    if ((m = s.match(RE_QD)) && !/^(l|ml|kg|g|cm|mm|m)$/i.test(m[3])) return { name: m[1].trim(), n: +m[2], u: unitOf(m[3]) };
     if ((m = s.match(RE_QH))) return { name: m[1].trim(), n: HAN_N[m[2]], u: unitOf(m[3]) };
     if ((m = s.match(RE_QP))) return { name: m[1].trim(), n: +m[2], u: unitOf(m[3]) };
     // 'x2' 앞이 숫자면 규격(320X210)이라 수량으로 안 본다. '320 x 2'처럼 띄어 쓰면 수량
@@ -2123,9 +2126,26 @@ textarea.bulkta { height: 150px; margin-top: 8px; line-height: 1.5; }
           root.querySelector('#bOut').innerHTML = html;
           update();
         }
-        function reparse() { parsed = parseMemo(ta.value, knownForMemo()); draw(); }
+        var last = null;
+        function reparse() {
+          last = ta.value;
+          try { parsed = parseMemo(ta.value, knownForMemo()); }
+          catch (e) {
+            parsed = { items: [], sites: [] };
+            root.querySelector('#bOut').innerHTML = '<p class="errmsg">정리하다 오류가 났어요: ' + esc(e && e.message) + '</p>';
+            update(); return;
+          }
+          draw();
+        }
         var tmr;
-        ta.addEventListener('input', function () { clearTimeout(tmr); tmr = setTimeout(reparse, 250); });
+        // 아이폰에서 붙여넣기 후 input 이 안 와서 목록이 안 생긴 일이 있었다 (2026-11-24) → 여러 이벤트 + 0.7초마다 바뀌었는지 확인
+        ['input', 'change', 'keyup', 'paste', 'compositionend', 'blur'].forEach(function (ev) {
+          ta.addEventListener(ev, function () { clearTimeout(tmr); tmr = setTimeout(function () { if (ta.value !== last) reparse(); }, 250); }); // 글이 바뀐 때만 (고친 품명·수량을 지우지 않게)
+        });
+        var poll = setInterval(function () {
+          if (!document.body.contains(ta)) { clearInterval(poll); return; }
+          if (ta.value !== last) reparse();
+        }, 700);
         root.querySelector('#bOut').addEventListener('input', function (e) {
           var row = e.target.closest('.brow'); if (!row) return;
           var it = parsed.items[+row.getAttribute('data-i')];
