@@ -685,7 +685,7 @@ textarea.bulkta { height: 150px; margin-top: 8px; line-height: 1.5; }
   // 이 화면이 기대하는 서버 코드 버전 (Code.gs 의 SERVER_VERSION). 서버가 이것보다 옛 것이면 맨 위에 안내.
   var SERVER_LATEST = '2026-11-19'; // 11-19: 메모 한꺼번에 등록·물품팩
   // 이 화면(index.html) 버전 — 고칠 때마다 올린다. ⋮ 메뉴 맨 아래에 보인다 (옛 화면이 남아 있는지 확인용)
-  var APP_VERSION = '2026-11-19';
+  var APP_VERSION = '2026-11-24';
   // 서버 코드가 최신인지 응답 모양으로 판단 (version 이 없던 옛 서버용)
   //   최신(13열): 기록에 addr·img, 수취인에 grp·addr / 어제(11열): rcv 는 있고 addr 없음 / 그 전(9열): rcv 없음
   function serverVersion(r) {
@@ -2805,9 +2805,11 @@ textarea.bulkta { height: 150px; margin-top: 8px; line-height: 1.5; }
   // ── 서버 주소 이사 ──────────────────────────────────────────
   // Apps Script 에서 '새 배포'를 하면 주소가 바뀐다. 옛 주소를 저장한 휴대폰은 여기 적힌 새 주소로 옮겨 간다.
   // 새 주소에서 같은 팀 코드로 목록이 열릴 때만 옮긴다 (다른 프로젝트면 그대로 둠). 주소만으로는 팀 코드 없이 아무것도 볼 수 없다.
+  // 2026-11-24: 서버 코드 2026-11-19 를 '새 배포'로 올려 주소가 AKfycby1… 로 바뀜 → 그 전 주소 둘 다 여기로
+  var NEW_U = 'https://script.google.com/macros/s/AKfycby1LIq_CG18kTdBNcZ2LpIpGu2dUIoJIn3yMdtXzrSj6XBW_uHWWshZS_1ki8hPXOc-lg/exec';
   var MOVED = {
-    'https://script.google.com/macros/s/AKfycbx1MRt7jvsZQYx3AMGpLWFqEhU2CbTiICvwlq2-EHWFuB2zl-Iu2SQjrUuHHMxlg1Kgfg/exec':
-      'https://script.google.com/macros/s/AKfycbzRqNWtsZ4RsGbwPhyX6XpC5SLTFeBi8ub5zpuqoz-exC_j-Kz8YauITiDlxoKWyi5kUg/exec',
+    'https://script.google.com/macros/s/AKfycbx1MRt7jvsZQYx3AMGpLWFqEhU2CbTiICvwlq2-EHWFuB2zl-Iu2SQjrUuHHMxlg1Kgfg/exec': NEW_U,
+    'https://script.google.com/macros/s/AKfycbzRqNWtsZ4RsGbwPhyX6XpC5SLTFeBi8ub5zpuqoz-exC_j-Kz8YauITiDlxoKWyi5kUg/exec': NEW_U,
   };
   if (window.SUPPLY_MOVED) Object.keys(window.SUPPLY_MOVED).forEach(function (k) { MOVED[k] = window.SUPPLY_MOVED[k]; }); // 테스트용
   function maybeMoveServer() {
